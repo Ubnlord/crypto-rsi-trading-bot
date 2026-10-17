@@ -113,9 +113,35 @@ class TradingBot:
             return
 
         order = self.exchange.place_market_order(self.symbol, "buy", amount)
-        if order and order.get("status") in ("closed", "filled", None):
+        if order and order.get("status") in ("closed", "filled"):
+            filled_amount = float(order.get("filled") or order.get("amount") or amount)
+            average_price = float(order.get("average") or order.get("price") or price)
+            if filled_amount <= 0:
+                logger.error("Buy order reported filled status without a positive filled amount")
+                return
+            if config.is_live:
+                try:
+                    protection = self.exchange.place_protective_oco(
+                        self.symbol, filled_amount, average_price
+                    )
+                    logger.info("Verified exchange-native OCO protection: %s", protection["orders"])
+                except Exception:
+                    # Fail closed. Live mode is disabled in this branch; if the
+                    # release gate is ever changed, do not continue unprotected.
+                    logger.exception("CRITICAL: protective OCO could not be verified; stopping bot")
+                    self.running = False
+                    return
             self.strategy.on_filled("buy")
-            logger.info("Entered long position: %s %s", amount, self.symbol)
+            logger.info("Entered long position: %s %s", filled_amount, self.symbol)
+        elif order and float(order.get("filled") or 0) > 0:
+            # Do not pretend a partially filled order is fully reconciled.
+            # A future live release must reconcile/cancel the remainder and
+            # protect the confirmed filled quantity before trading can continue.
+            logger.critical(
+                "Order %s has partial fill %.8g with status %s; live release is blocked pending reconciliation",
+                order.get("id"), float(order.get("filled") or 0), order.get("status")
+            )
+            self.running = False
 
     def _handle_sell(self, price: float, current_position: float):
         if current_position <= 0:
