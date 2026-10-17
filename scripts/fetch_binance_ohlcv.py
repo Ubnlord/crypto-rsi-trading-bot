@@ -59,6 +59,31 @@ def download_month(year: int, month: int) -> list[list]:
         raise RuntimeError(f"Downloaded archive {name} is not a valid ZIP file") from exc
 
 
+def timestamp_to_ms(value: str | int) -> int:
+    # Binance SPOT archive timestamps switched from milliseconds to
+    # microseconds on 2025-01-01; normalize each row before comparisons.
+    raw = int(value)
+    return raw // 1000 if raw >= 100_000_000_000_000 else raw
+
+
+def download_day(day: datetime) -> list[list]:
+    date = day.strftime("%Y-%m-%d")
+    name = f"BTCUSDT-1h-{date}.zip"
+    url = f"https://data.binance.vision/data/spot/daily/klines/BTCUSDT/1h/{name}"
+    request = Request(url, headers={"User-Agent": "crypto-rsi-backtest/1.0"})
+    try:
+        with urlopen(request, timeout=45) as response:
+            archive_bytes = response.read()
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Could not download Binance daily repair archive {name}: {exc}") from exc
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        csv_name = next((n for n in archive.namelist() if n.lower().endswith(".csv")), None)
+        if not csv_name:
+            raise RuntimeError(f"Daily archive {name} does not contain a CSV")
+        text = io.TextIOWrapper(archive.open(csv_name), encoding="utf-8", newline="")
+        return [row for row in csv.reader(text) if row and row[0].strip().lstrip("-").isdigit() and len(row) >= 6]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="2021-01-01T00:00:00Z")
@@ -89,28 +114,52 @@ def main() -> None:
 
     unique = {}
     start_ms = int(start.timestamp() * 1000)
-
-    def timestamp_to_ms(value: str | int) -> int:
-        # Binance SPOT archive timestamps switched from milliseconds to
-        # microseconds on 2025-01-01; normalize each row before comparisons.
-        raw = int(value)
-        return raw // 1000 if raw >= 100_000_000_000_000 else raw
-
     for row in raw_rows:
         open_ms = timestamp_to_ms(row[0])
         close_ms = timestamp_to_ms(row[6]) if len(row) > 6 else open_ms + INTERVAL_MS - 1
         if start_ms <= open_ms <= end_ms and close_ms <= end_ms:
             unique[open_ms] = row
+    if len(unique) < 1000:
+        raise RuntimeError(f"Expected a meaningful historical sample, received only {len(unique)} candles")
+
+    # Repair missing hourly bars from the official daily archive. Never invent
+    # synthetic OHLC values; fail if any missing timestamp remains unresolved.
+    timestamps = sorted(unique)
+    missing_times = sorted({
+        missing
+        for left, right in zip(timestamps, timestamps[1:])
+        if right - left != INTERVAL_MS
+        for missing in range(left + INTERVAL_MS, right, INTERVAL_MS)
+    })
+    repair_dates = sorted({
+        datetime.fromtimestamp(ts / 1000, timezone.utc).date()
+        for ts in missing_times
+    })
+    repaired = 0
+    if repair_dates:
+        daily_rows = []
+        with ThreadPoolExecutor(max_workers=min(args.workers, len(repair_dates))) as pool:
+            futures = {
+                pool.submit(download_day, datetime.combine(day, datetime.min.time(), timezone.utc)): day
+                for day in repair_dates
+            }
+            for future in as_completed(futures):
+                daily_rows.extend(future.result())
+        missing_set = set(missing_times)
+        for row in daily_rows:
+            open_ms = timestamp_to_ms(row[0])
+            if open_ms in missing_set:
+                unique[open_ms] = row
+                repaired += 1
+
     timestamps = sorted(unique)
     ordered = [unique[key] for key in timestamps]
-    if len(ordered) < 1000:
-        raise RuntimeError(f"Expected a meaningful historical sample, received only {len(ordered)} candles")
     if any(b <= a for a, b in zip(timestamps, timestamps[1:])):
         raise RuntimeError("Timestamps are not strictly increasing")
     gaps = [(a, b) for a, b in zip(timestamps, timestamps[1:]) if b - a != INTERVAL_MS]
     if gaps:
         first = datetime.fromtimestamp(gaps[0][0] / 1000, timezone.utc).isoformat()
-        raise RuntimeError(f"Found {len(gaps)} missing-hour gaps; first gap begins {first}. Refusing incomplete data.")
+        raise RuntimeError(f"Found {len(gaps)} unresolved missing-hour gaps after daily archive repair; first gap begins {first}. Refusing incomplete data.")
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +179,7 @@ def main() -> None:
         "candles": len(ordered),
         "missing_hour_gaps": len(gaps),
         "archive_months": len(months),
+        "daily_archive_repairs": repaired,
         "csv": str(output),
     }, indent=2))
 
