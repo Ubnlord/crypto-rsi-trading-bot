@@ -1,125 +1,89 @@
-# Real Crypto Trading Robot (Python + ccxt)
+# Crypto RSI Trading Bot (Python + CCXT)
 
-A clean, modular **live-capable** trading bot for cryptocurrency using the **RSI Mean-Reversion** strategy.
+Educational, long-only spot trading research project. **Paper mode is the default. Live execution is not approved by this repository change.** Cryptocurrency trading can lose money; backtest results are not predictions of future performance.
 
-**This is educational software.**  
-Trading cryptocurrencies involves a high risk of losing money. Past performance is not indicative of future results. You are solely responsible for any trades placed with this code.
+## Strategy
 
----
+The strategy now uses an RSI recovery entry with an EMA trend filter:
 
-## Features
+- **Entry:** RSI crosses back above the oversold threshold, and the completed candle closes above the EMA trend filter (default EMA 200).
+- **Exit signal:** RSI crosses into overbought.
+- **Risk exits in backtests:** fixed stop-loss and take-profit levels, with gap-aware fills.
+- The live bot's exchange integration does **not** yet place and verify protective stop-loss/take-profit orders. Do not enable live trading based on these changes alone.
 
-- **ccxt** unified connector → works with Binance, Bybit, Kraken, Coinbase, OKX, and 100+ others
-- **Paper mode by default** (simulated fills with real market data)
-- **Live mode** only when you explicitly set `MODE=live` + provide API keys
-- RSI mean-reversion strategy (easily replaceable)
-- Basic risk management (fixed fractional position sizing + max position %)
-- Clean logging
-- Graceful shutdown (Ctrl+C)
+The strategy requires enough candles to warm up both RSI and EMA. It intentionally returns HOLD until sufficient history is available.
 
----
+## Reproducible backtesting
 
-## Quick Start
+The backtester consumes a historical OHLCV CSV. Required columns: `timestamp` (optional), `open`, `high`, `low`, `close`, `volume`. Timestamps are sorted chronologically when present. Use exchange-sourced historical data and keep the original CSV with your experiment notes.
 
-### 1. Install
+Install dependencies:
 
 ```bash
-cd trading_bot
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### 2. Configure
+Run:
+
+```bash
+python backtest.py --csv data/BTC_USDT_15m.csv --output backtest-results.json
+```
+
+Optional arguments include `--cash`, `--fee-pct`, `--slippage-pct`, `--rsi-period`, and `--ema-period`. Defaults: 10,000 starting quote currency, 0.1% fee per side, 0.05% slippage per side, RSI 14, EMA 200, 1% risk budget per trade, 10% maximum position allocation, 2% stop and 4% target.
+
+The JSON report includes configuration, trades, equity curve, net return, win rate and maximum drawdown. Keep fees, slippage, timeframe, date range and data source consistent when comparing runs. The backtester executes signals at the next candle open, never at the signal candle close. If stop and target are both touched in a candle, it assumes the stop happens first. These conservative assumptions still cannot model every exchange condition.
+
+## Automated historical market-data evaluation
+
+The `Historical BTCUSDT Backtest` workflow downloads hourly Binance **spot** candles from official public monthly ZIP archives, normalizes the archive's millisecond/microsecond timestamp formats, and attempts to repair missing hours from daily archives. It never fabricates candles: any unresolved gaps are recorded, and the backtester exits an open position at the next available open and suppresses entries on that discontinuous bar. It evaluates the full sample from 2021 onward with 0.10% per-side fees and 0.05% per-side estimated slippage, and uploads the CSV plus JSON report as a 30-day workflow artifact.
+
+Run the same analysis locally after installing pandas and numpy:
+
+```bash
+python scripts/fetch_binance_ohlcv.py --start 2021-01-01T00:00:00Z --output data/BTCUSDT_1h.csv
+python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
+```
+
+The report includes net return after modelled costs, maximum drawdown, total fees, estimated slippage, and closed-trade performance grouped by EMA trend and realised-volatility regimes. Regime attribution is descriptive and retrospective; it is not proof of future profitability. Preserve the CSV and report together so the experiment can be reproduced.
+
+A workflow run has **not** been verified as successful until the actual run logs and artifact are inspected. Do not treat a configured workflow as completed evidence. Historical backtesting does not verify paper/live position reconciliation or exchange-side protective orders.
+
+## Automated tests
+
+Run locally:
+
+```bash
+python -m pip install pandas numpy
+python -m unittest discover -s tests -v
+python -m py_compile strategy.py backtest.py
+```
+
+GitHub Actions runs the unit tests and compilation checks on pushes to this upgrade branch and pull requests to `main`.
+
+## Run the bot in paper mode
 
 ```bash
 cp .env.example .env
-# Edit .env with your preferred settings
-```
-
-Important settings:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MODE` | `paper` (safe) or `live` | `paper` |
-| `EXCHANGE_ID` | ccxt exchange id | `binance` |
-| `API_KEY` / `API_SECRET` | Your keys (only needed for live) | empty |
-| `SYMBOL` | Trading pair | `BTC/USDT` |
-| `TIMEFRAME` | Candle size | `15m` |
-| `RSI_PERIOD` / `RSI_OVERSOLD` / `RSI_OVERBOUGHT` | Strategy params | 14 / 30 / 70 |
-| `RISK_PER_TRADE_PCT` | % of equity risked per trade | 1.0 |
-| `STOP_LOSS_PCT` | Used for position sizing | 2.0 |
-
-### 3. Run (Paper first!)
-
-```bash
+# Keep MODE=paper
 python bot.py
 ```
 
-You should see live prices + RSI values and simulated BUY/SELL when conditions are met.
+Never commit `.env` or share API keys. Public market data is sufficient for paper testing. If live execution is ever considered, use API keys without withdrawal permissions and IP restrictions where supported.
 
-### 4. Go Live (ONLY after thorough testing)
+## Live-trading release gates (not yet satisfied)
 
-1. Create **API keys** on your exchange with **trading permissions only** (no withdrawal).
-2. Restrict keys by IP if possible.
-3. Set in `.env`:
-   ```
-   MODE=live
-   API_KEY=your_key
-   API_SECRET=your_secret
-   ```
-4. Start with very small size (`RISK_PER_TRADE_PCT=0.25` or lower).
-5. Run and monitor closely.
+This branch has a hard code-level gate (`LIVE_EXECUTION_ENABLED = False`): setting `MODE=live` fails validation. Keep it that way until all release gates pass. Before any live use, separately implement and verify: exchange-native protective stop-loss and take-profit orders; confirmed fill reconciliation including partial fills; safe handling of existing wallet balances; market precision/minimum-notional checks; persistent state and reconciliation across restarts; exchange-specific error/retry handling; comprehensive integration tests on the selected exchange sandbox; and independent risk review. These capabilities have not yet been verified, and no live orders should be sent.
 
----
+## Project structure
 
-## Strategy Logic (RSI Mean-Reversion)
-
-- **BUY** when RSI crosses (or is) below the oversold level (default 30)
-- **SELL** when RSI crosses (or is) above the overbought level (default 70)
-- Only one position at a time by default
-
-This is a classic mean-reversion idea. It works best in ranging markets and can underperform in strong trends. You should backtest and optimize parameters yourself.
-
----
-
-## Project Structure
-
-```
-trading_bot/
-├── bot.py              # Main loop
-├── config.py           # Loads .env
-├── exchange.py         # ccxt wrapper + paper simulator
-├── strategy.py         # RSI mean-reversion
-├── risk.py             # Position sizing
-├── requirements.txt
-├── .env.example
-└── README.md
-```
-
----
-
-## Extending the Bot
-
-- **Add another strategy**: implement a class with `evaluate(df) → (signal, price, rsi)` and swap it in `bot.py`
-- **Futures / leverage**: change `options={"defaultType": "future"}` in `exchange.py` and adjust risk carefully
-- **Multiple symbols**: loop over a list of symbols
-- **Stop-loss / take-profit orders**: use `create_order` with `stopLoss` / `takeProfit` params (exchange-dependent)
-- **Backtesting**: fetch historical OHLCV and run the same signal logic offline (easy to add)
-
----
-
-## Important Safety Notes
-
-- Always start in **paper mode**.
-- Never share your API keys.
-- Use keys with the minimum required permissions.
-- Monitor the bot; do not leave it unattended with large capital.
-- Crypto markets are 24/7 and extremely volatile.
-- This code has no warranty. Use at your own risk.
-
----
+- `bot.py` — polling loop
+- `strategy.py` — RSI recovery + EMA trend filter
+- `risk.py` — basic position sizing helpers
+- `exchange.py` — CCXT wrapper and paper simulator
+- `backtest.py` — deterministic OHLCV backtester
+- `tests/test_backtest.py` — regression tests
+- `.github/workflows/backtest-tests.yml` — automated test workflow
 
 ## License
 
-MIT — free to use, modify, and learn from.
+MIT — free to use, modify and learn from.

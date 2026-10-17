@@ -1,12 +1,16 @@
 """
-Configuration loader. All sensitive values come from environment variables.
+Configuration loader. Sensitive values are read from environment variables.
+Live trading remains opt-in; never use it before completing the documented release gates.
 """
-
 import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Hard release gate: this branch must not submit real orders until exchange-side
+# protection, reconciliation, restart recovery, and sandbox tests are reviewed.
+LIVE_EXECUTION_ENABLED = False
 
 
 @dataclass
@@ -16,14 +20,16 @@ class Config:
     api_secret: str = os.getenv("API_SECRET", "")
     api_passphrase: str = os.getenv("API_PASSPHRASE", "")
 
-    mode: str = os.getenv("MODE", "paper").lower()  # "paper" or "live"
+    mode: str = os.getenv("MODE", "paper").lower()
     symbol: str = os.getenv("SYMBOL", "BTC/USD")
     timeframe: str = os.getenv("TIMEFRAME", "15m")
-    candle_limit: int = int(os.getenv("CANDLE_LIMIT", "100"))
+    # EMA(200) needs at least 200 closes; use extra history for RSI/warmup.
+    candle_limit: int = int(os.getenv("CANDLE_LIMIT", "300"))
 
     rsi_period: int = int(os.getenv("RSI_PERIOD", "14"))
     rsi_oversold: float = float(os.getenv("RSI_OVERSOLD", "30"))
     rsi_overbought: float = float(os.getenv("RSI_OVERBOUGHT", "70"))
+    ema_period: int = int(os.getenv("EMA_PERIOD", "200"))
 
     risk_per_trade_pct: float = float(os.getenv("RISK_PER_TRADE_PCT", "1.0"))
     max_position_pct: float = float(os.getenv("MAX_POSITION_PCT", "10.0"))
@@ -36,18 +42,30 @@ class Config:
 
     @property
     def is_live(self) -> bool:
-        return self.mode == "live" and bool(self.api_key) and bool(self.api_secret)
+        return LIVE_EXECUTION_ENABLED and self.mode == "live" and bool(self.api_key) and bool(self.api_secret)
 
     def validate(self) -> None:
         if self.mode not in ("paper", "live"):
             raise ValueError("MODE must be 'paper' or 'live'")
+        if self.mode == "live" and not LIVE_EXECUTION_ENABLED:
+            raise ValueError(
+                "Live execution is disabled in this build. Keep MODE=paper until "
+                "protective orders, partial-fill reconciliation, restart recovery, "
+                "and exchange sandbox tests have passed independent review."
+            )
+        if self.rsi_period < 2 or self.ema_period < 2:
+            raise ValueError("RSI_PERIOD and EMA_PERIOD must be at least 2")
+        if not 0 < self.rsi_oversold < self.rsi_overbought < 100:
+            raise ValueError("Require 0 < RSI_OVERSOLD < RSI_OVERBOUGHT < 100")
+        if self.candle_limit < max(self.rsi_period + 2, self.ema_period):
+            raise ValueError("CANDLE_LIMIT must cover RSI and EMA warmup periods")
         if self.is_live:
             print(
                 "\n"
                 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                 "  WARNING: LIVE TRADING MODE ENABLED\n"
                 "  Real money will be used. You can lose everything.\n"
-                "  Double-check keys, symbol, risk settings, and strategy.\n"
+                "  Live trading is not verified by this project branch.\n"
                 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
             )
 
