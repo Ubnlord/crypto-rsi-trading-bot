@@ -63,6 +63,13 @@ class PaperProtectiveExitTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
+    def test_invalid_ohlc_range_fails_closed(self):
+        exchange = self.make_exchange()
+        result = exchange.check_paper_protective_exit(
+            "BTC/USDT", 101.0, candle_open=120.0, candle_high=110.0, candle_low=99.0
+        )
+        self.assertIsNone(result)
+
     def test_live_mode_never_uses_paper_protection(self):
         exchange = self.make_exchange()
         exchange.config.is_live = True
