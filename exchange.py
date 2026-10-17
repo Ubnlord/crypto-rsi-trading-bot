@@ -178,6 +178,9 @@ class Exchange:
                 amount = held
             if amount <= 0:
                 return {"status": "rejected", "reason": "no position"}
+            # Recalculate after clipping to the actual held quantity.
+            gross = amount * execution_price
+            fee = gross * self.paper_fee_pct / 100
             proceeds = gross - fee
             self.paper_balance += proceeds
             self.paper_positions[symbol] = held - amount
