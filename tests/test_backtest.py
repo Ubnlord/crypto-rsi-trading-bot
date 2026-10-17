@@ -45,11 +45,13 @@ class BacktestTests(unittest.TestCase):
             stop_loss_pct=10, take_profit_pct=20, fee_pct=0.1,
             slippage_pct=0, rsi_period=2, ema_period=2,
         )
-        signals = [("BUY", 100, 25), ("HOLD", 100, 40), ("HOLD", 100, 45),
-                   ("HOLD", 100, 50), ("HOLD", 100, 50)]
-        with patch("backtest.generate_signal", side_effect=signals):
+        # At execution index 4, completed candles show RSI recovering above
+        # oversold with price above EMA. The open position closes at end of data.
+        rsi_values = pd.Series([50.0, 25.0, 25.0, 35.0, 40.0, 40.0])
+        ema_values = pd.Series([100.0] * len(data))
+        with patch("backtest.compute_rsi", return_value=rsi_values), patch("backtest.compute_ema", return_value=ema_values):
             first = run_backtest(data, config)
-        with patch("backtest.generate_signal", side_effect=signals):
+        with patch("backtest.compute_rsi", return_value=rsi_values), patch("backtest.compute_ema", return_value=ema_values):
             second = run_backtest(data, config)
         self.assertEqual(first, second)
         self.assertEqual(first["summary"]["closed_trades"], 1)
