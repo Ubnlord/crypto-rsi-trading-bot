@@ -37,6 +37,10 @@ class Exchange:
 
         self.exchange: ccxt.Exchange = exchange_class(params)
         self.paper_state_path = Path(os.getenv("PAPER_STATE_PATH", "data/paper-state.json"))
+        self.paper_fee_pct = float(os.getenv("PAPER_FEE_PCT", "0.1"))
+        self.paper_slippage_pct = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.05"))
+        if not (0 <= self.paper_fee_pct < 100 and 0 <= self.paper_slippage_pct < 100):
+            raise ValueError("PAPER_FEE_PCT and PAPER_SLIPPAGE_PCT must be between 0 and 100")
         self.paper_state = load_state(self.paper_state_path, initial_cash=10_000.0)
         self.paper_balance = float(self.paper_state["cash"])
         self.paper_positions: Dict[str, float] = {
@@ -130,19 +134,27 @@ class Exchange:
             price = float(ticker["last"])
         else:
             price = float(execution_price)
-        if not price > 0:
-            return {"status": "rejected", "reason": "invalid paper execution price"}
-        cost = amount * price
+        if not (price > 0 and amount > 0):
+            return {"status": "rejected", "reason": "invalid paper execution price or amount"}
+        side = side.lower()
+        if side not in ("buy", "sell"):
+            return {"status": "rejected", "reason": "unsupported paper order side"}
+        # Apply adverse slippage before computing fees and cash movements.
+        slippage = self.paper_slippage_pct / 100
+        execution_price = price * (1 + slippage) if side == "buy" else price * (1 - slippage)
+        gross = amount * execution_price
+        fee = gross * self.paper_fee_pct / 100
 
         if side == "buy":
-            if cost > self.paper_balance:
+            total_cost = gross + fee
+            if total_cost > self.paper_balance:
                 logger.warning("Paper: insufficient balance")
                 return {"status": "rejected", "reason": "insufficient balance"}
             old_amount = self.paper_positions.get(symbol, 0.0)
-            old_entry = self.paper_entry_price.get(symbol, price)
+            old_entry = self.paper_entry_price.get(symbol, execution_price)
             new_amount = old_amount + amount
-            average_entry = ((old_amount * old_entry) + (amount * price)) / new_amount
-            self.paper_balance -= cost
+            average_entry = ((old_amount * old_entry) + (amount * execution_price)) / new_amount
+            self.paper_balance -= total_cost
             self.paper_positions[symbol] = new_amount
             self.paper_entry_price[symbol] = average_entry
             stop_price, target_price = protective_levels(
@@ -156,7 +168,8 @@ class Exchange:
             }
             self._persist_paper_state()
             logger.info(
-                f"[PAPER] BUY {amount:.6f} {symbol} @ {price:.2f} | "
+                f"[PAPER] BUY {amount:.6f} {symbol} @ {execution_price:.8g} "
+                f"(fee {fee:.4f}, slippage {self.paper_slippage_pct:.3g}%) | "
                 f"Balance left: {self.paper_balance:.2f}"
             )
         else:  # sell
@@ -165,13 +178,14 @@ class Exchange:
                 amount = held
             if amount <= 0:
                 return {"status": "rejected", "reason": "no position"}
-            proceeds = amount * price
+            proceeds = gross - fee
             self.paper_balance += proceeds
             self.paper_positions[symbol] = held - amount
-            entry = self.paper_entry_price.get(symbol, price)
-            pnl = (price - entry) * amount
+            entry = self.paper_entry_price.get(symbol, execution_price)
+            pnl = (execution_price - entry) * amount - fee
             logger.info(
-                f"[PAPER] SELL {amount:.6f} {symbol} @ {price:.2f} | "
+                f"[PAPER] SELL {amount:.6f} {symbol} @ {execution_price:.8g} "
+                f"(fee {fee:.4f}, slippage {self.paper_slippage_pct:.3g}%) | "
                 f"PnL: {pnl:+.2f} | Balance: {self.paper_balance:.2f}"
             )
             if self.paper_positions[symbol] <= 1e-12:
@@ -188,7 +202,8 @@ class Exchange:
             "symbol": symbol,
             "side": side,
             "amount": amount,
-            "price": price,
+            "price": execution_price,
+            "fee": fee,
             "status": "closed",
             "mode": "paper",
         }
