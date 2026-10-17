@@ -83,7 +83,14 @@ def main() -> None:
         "end_utc": data["timestamp"].iloc[-1].isoformat(),
         "duplicate_timestamps": int(data["timestamp"].duplicated().sum()),
         "timestamp_gaps": int((data["timestamp"].diff().dropna() != pd.Timedelta(hours=1)).sum()),
-        "note": "Downloader rejects missing hourly candles; verify this metadata against the CSV and workflow logs.",
+        "gap_intervals_utc": [
+            {"last_available": data["timestamp"].iloc[i - 1].isoformat(),
+             "next_available": data["timestamp"].iloc[i].isoformat()}
+            for i in range(1, len(data))
+            if data["timestamp"].iloc[i] - data["timestamp"].iloc[i - 1] != pd.Timedelta(hours=1)
+        ],
+        "gap_policy": "No candles are fabricated; the backtester exits an open position at the next available open and suppresses new entries on that gap bar.",
+        "note": "Archive gaps are reported and handled conservatively rather than silently forward-filled.",
     }
     result["market_regime_analysis"] = {
         "classification_method": "At trade entry: close vs EMA200; high/low realised volatility split at full-sample median of annualised 30-day hourly volatility. Retrospective descriptive grouping, not a predictive signal.",
