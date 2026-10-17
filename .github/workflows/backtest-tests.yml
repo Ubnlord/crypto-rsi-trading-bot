@@ -30,4 +30,4 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
       - name: Compile Python modules
-        run: python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py
+        run: python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py scripts/run_paper_trial.py scripts/walk_forward_backtest.py scripts/evaluate_historical_backtest.py scripts/fetch_binance_ohlcv.py
