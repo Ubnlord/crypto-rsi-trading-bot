@@ -122,9 +122,16 @@ class Exchange:
             self.exchange, symbol, amount, stop_price, target_price
         )
 
-    def _paper_fill(self, symbol: str, side: str, amount: float) -> Dict[str, Any]:
-        ticker = self.exchange.fetch_ticker(symbol)
-        price = float(ticker["last"])
+    def _paper_fill(
+        self, symbol: str, side: str, amount: float, execution_price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        if execution_price is None:
+            ticker = self.exchange.fetch_ticker(symbol)
+            price = float(ticker["last"])
+        else:
+            price = float(execution_price)
+        if not price > 0:
+            return {"status": "rejected", "reason": "invalid paper execution price"}
         cost = amount * price
 
         if side == "buy":
@@ -190,21 +197,49 @@ class Exchange:
         self.paper_state["cash"] = float(self.paper_balance)
         save_state(self.paper_state_path, self.paper_state)
 
-    def check_paper_protective_exit(self, symbol: str, mark_price: float) -> Optional[Dict[str, Any]]:
-        """Simulate stop/target exits in paper mode; not an exchange-side live order."""
+    def check_paper_protective_exit(
+        self,
+        symbol: str,
+        mark_price: float,
+        *,
+        candle_open: Optional[float] = None,
+        candle_high: Optional[float] = None,
+        candle_low: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Simulate protective exits using completed-candle OHLC, not just its close.
+
+        If both stop and target are touched within one candle and the open is
+        between them, assume the stop was hit first (conservative, since OHLC
+        does not reveal intrabar ordering). Gaps fill at the candle open.
+        This is paper simulation only, never exchange-side protection.
+        """
         if self.config.is_live:
             return None
         position = self.paper_state["positions"].get(symbol)
-        if not position or mark_price <= 0:
+        if not position or not mark_price > 0:
             return None
         stop = float(position["stop_price"])
         target = float(position["take_profit_price"])
-        if mark_price <= stop:
-            logger.warning("[PAPER] Protective stop triggered at %.8g", mark_price)
-            return self._paper_fill(symbol, "sell", float(position["amount"]))
-        if mark_price >= target:
-            logger.info("[PAPER] Take-profit triggered at %.8g", mark_price)
-            return self._paper_fill(symbol, "sell", float(position["amount"]))
+        open_price = float(candle_open) if candle_open is not None else mark_price
+        high = float(candle_high) if candle_high is not None else mark_price
+        low = float(candle_low) if candle_low is not None else mark_price
+        if min(open_price, high, low, mark_price) <= 0 or low > high:
+            logger.error("[PAPER] Invalid OHLC values; refusing protective exit evaluation")
+            return None
+
+        # Stop takes precedence when both barriers are crossed in the same bar.
+        if open_price <= stop:
+            logger.warning("[PAPER] Stop gapped through; simulated fill at candle open %.8g", open_price)
+            return self._paper_fill(symbol, "sell", float(position["amount"]), open_price)
+        if open_price >= target:
+            logger.info("[PAPER] Target gapped through; simulated fill at candle open %.8g", open_price)
+            return self._paper_fill(symbol, "sell", float(position["amount"]), open_price)
+        if low <= stop:
+            logger.warning("[PAPER] Protective stop touched; simulated fill at %.8g", stop)
+            return self._paper_fill(symbol, "sell", float(position["amount"]), stop)
+        if high >= target:
+            logger.info("[PAPER] Take-profit touched; simulated fill at %.8g", target)
+            return self._paper_fill(symbol, "sell", float(position["amount"]), target)
         return None
 
     def amount_to_precision(self, symbol: str, amount: float) -> float:
