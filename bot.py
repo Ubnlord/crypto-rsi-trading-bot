@@ -31,8 +31,11 @@ class TradingBot:
             overbought=config.rsi_overbought,
             ema_period=config.ema_period,
         )
-        self.running = True
         self.symbol = config.symbol
+        # Rebuild strategy position state from the durable paper portfolio on
+        # restart so an existing position can still receive RSI exit signals.
+        self.strategy.in_position = self.exchange.get_position_amount(self.symbol) > 0
+        self.running = True
         signal.signal(signal.SIGINT, self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
 
