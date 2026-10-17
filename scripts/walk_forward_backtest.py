@@ -81,7 +81,7 @@ def main() -> None:
         "training_candidates_ranked": candidates,
         "selected_config_from_training_only": selected,
         "holdout": {
-            "evaluation_start_index": split,
+            "evaluation_start_index": split,\n            "trade_start_index_within_warmup_prefixed_slice": trade_start_index,
             "warmup_prefix_candles_not_intended_for_trading": split - holdout_start,
             "baseline_config": asdict(baseline),
             "baseline_summary": baseline_result["summary"],
