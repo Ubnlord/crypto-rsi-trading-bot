@@ -49,10 +49,10 @@ Run the same analysis locally after installing pandas and numpy:
 
 ```bash
 python scripts/fetch_binance_ohlcv.py --start 2021-01-01T00:00:00Z --output data/BTCUSDT_1h.csv
-python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
+python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05\npython scripts/walk_forward_backtest.py --csv data/BTCUSDT_1h.csv --output walk-forward-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
 ```
 
-The report includes net return after modelled costs, maximum drawdown, total fees, estimated slippage, and closed-trade performance grouped by EMA trend and realised-volatility regimes. Regime attribution is descriptive and retrospective; it is not proof of future profitability. Preserve the CSV and report together so the experiment can be reproduced.
+The report includes net return after modelled costs, maximum drawdown, total fees, estimated slippage, and closed-trade performance grouped by EMA trend and realised-volatility regimes. Regime attribution is descriptive and retrospective; it is not proof of future profitability. Preserve the CSV and report together so the experiment can be reproduced. The workflow also runs `scripts/walk_forward_backtest.py`: it ranks a small predeclared EMA/RSI grid on the earlier training segment, then compares the training-selected configuration against the existing baseline on a later chronological holdout. The holdout is not used to select parameters. This is a diagnostic, not proof of future profitability; do not retune on the holdout or change defaults based on one historical split.
 
 A workflow run has **not** been verified as successful until the actual run logs and artifact are inspected. Do not treat a configured workflow as completed evidence. Historical backtesting does not verify paper/live position reconciliation or exchange-side protective orders.
 
@@ -87,7 +87,7 @@ This branch has a hard code-level gate (`LIVE_EXECUTION_ENABLED = False`): setti
 - `bot.py` — polling loop
 - `strategy.py` — RSI recovery + EMA trend filter
 - `risk.py` — basic position sizing helpers
-- `exchange.py` — CCXT wrapper and paper simulator
+- `exchange.py` — CCXT wrapper and paper simulator\n- `paper_state.py` — atomic paper portfolio and embedded append-only trade journal\n- `scripts/walk_forward_backtest.py` — train-only parameter ranking and chronological holdout evaluation
 - `backtest.py` — deterministic OHLCV backtester
 - `tests/test_backtest.py` — regression tests
 - `.github/workflows/backtest-tests.yml` — automated test workflow
