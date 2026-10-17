@@ -122,6 +122,24 @@ class DurablePaperJournalTests(unittest.TestCase):
             self.assertEqual(len(ids), 80)
             self.assertEqual(final["positions"], {})
 
+
+    def test_restart_rejects_cash_or_position_drift_from_journal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "paper-state.json"
+            exchange = self.make_exchange(path)
+            exchange._paper_fill("BTC/USD", "buy", 0.01, execution_price=100.0)
+            persisted = load_state(path)
+            bad_cash = dict(persisted)
+            bad_cash["cash"] = float(persisted["cash"]) + 1.0
+            with self.assertRaisesRegex(RuntimeError, "cash balance does not reconcile"):
+                validate_state(bad_cash)
+            bad_position = dict(persisted)
+            bad_position["positions"] = dict(persisted["positions"])
+            bad_position["positions"]["BTC/USD"] = dict(persisted["positions"]["BTC/USD"])
+            bad_position["positions"]["BTC/USD"]["amount"] *= 2
+            with self.assertRaisesRegex(RuntimeError, "does not reconcile to trade journal"):
+                validate_state(bad_position)
+
     def test_legacy_state_without_journal_keeps_existing_cash(self):
         state = default_state(500.0)
         del state["trade_journal"]
