@@ -15,7 +15,7 @@ from strategy import compute_ema
 def trade_group(trades: list[dict], labels: pd.Series) -> list[dict]:
     output = []
     for label in sorted(labels.dropna().unique()):
-        selected = [t for t in trades if labels.iloc[int(t["entry_index"])] == label]
+        selected = [t for t in trades if pd.notna(labels.iloc[int(t["entry_index"])]) and labels.iloc[int(t["entry_index"])] == label]
         pnl = [float(t["pnl"]) for t in selected]
         gross_wins = sum(x for x in pnl if x > 0)
         gross_losses = abs(sum(x for x in pnl if x < 0))
