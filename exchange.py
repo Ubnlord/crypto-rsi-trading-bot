@@ -6,13 +6,16 @@ Supports paper mode (simulated fills) and live mode (real orders).
 from __future__ import annotations
 
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 import ccxt
 import pandas as pd
 
 from config import config
+from paper_state import load_state, save_state, protective_levels
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +35,17 @@ class Exchange:
                 params["password"] = config.api_passphrase
 
         self.exchange: ccxt.Exchange = exchange_class(params)
-        self.paper_balance = 10_000.0  # starting USDT for paper mode
-        self.paper_positions: Dict[str, float] = {}  # symbol -> amount
-        self.paper_entry_price: Dict[str, float] = {}
+        self.paper_state_path = Path(os.getenv("PAPER_STATE_PATH", "data/paper-state.json"))
+        self.paper_state = load_state(self.paper_state_path, initial_cash=10_000.0)
+        self.paper_balance = float(self.paper_state["cash"])
+        self.paper_positions: Dict[str, float] = {
+            symbol: float(position["amount"])
+            for symbol, position in self.paper_state["positions"].items()
+        }
+        self.paper_entry_price: Dict[str, float] = {
+            symbol: float(position["entry_price"])
+            for symbol, position in self.paper_state["positions"].items()
+        }
 
         if not config.is_live:
             logger.info("Running in PAPER mode (no real orders will be sent)")
@@ -104,9 +115,23 @@ class Exchange:
             if cost > self.paper_balance:
                 logger.warning("Paper: insufficient balance")
                 return {"status": "rejected", "reason": "insufficient balance"}
+            old_amount = self.paper_positions.get(symbol, 0.0)
+            old_entry = self.paper_entry_price.get(symbol, price)
+            new_amount = old_amount + amount
+            average_entry = ((old_amount * old_entry) + (amount * price)) / new_amount
             self.paper_balance -= cost
-            self.paper_positions[symbol] = self.paper_positions.get(symbol, 0.0) + amount
-            self.paper_entry_price[symbol] = price
+            self.paper_positions[symbol] = new_amount
+            self.paper_entry_price[symbol] = average_entry
+            stop_price, target_price = protective_levels(
+                average_entry, self.config.stop_loss_pct, self.config.take_profit_pct
+            )
+            self.paper_state["positions"][symbol] = {
+                "amount": new_amount,
+                "entry_price": average_entry,
+                "stop_price": stop_price,
+                "take_profit_price": target_price,
+            }
+            self._persist_paper_state()
             logger.info(
                 f"[PAPER] BUY {amount:.6f} {symbol} @ {price:.2f} | "
                 f"Balance left: {self.paper_balance:.2f}"
@@ -126,9 +151,14 @@ class Exchange:
                 f"[PAPER] SELL {amount:.6f} {symbol} @ {price:.2f} | "
                 f"PnL: {pnl:+.2f} | Balance: {self.paper_balance:.2f}"
             )
-            if self.paper_positions[symbol] <= 0:
+            if self.paper_positions[symbol] <= 1e-12:
                 self.paper_positions.pop(symbol, None)
                 self.paper_entry_price.pop(symbol, None)
+                self.paper_state["positions"].pop(symbol, None)
+            else:
+                remaining = self.paper_positions[symbol]
+                self.paper_state["positions"][symbol]["amount"] = remaining
+            self._persist_paper_state()
 
         return {
             "id": f"paper-{int(time.time())}",
@@ -139,6 +169,27 @@ class Exchange:
             "status": "closed",
             "mode": "paper",
         }
+
+    def _persist_paper_state(self) -> None:
+        self.paper_state["cash"] = float(self.paper_balance)
+        save_state(self.paper_state_path, self.paper_state)
+
+    def check_paper_protective_exit(self, symbol: str, mark_price: float) -> Optional[Dict[str, Any]]:
+        """Simulate stop/target exits in paper mode; not an exchange-side live order."""
+        if self.config.is_live:
+            return None
+        position = self.paper_state["positions"].get(symbol)
+        if not position or mark_price <= 0:
+            return None
+        stop = float(position["stop_price"])
+        target = float(position["take_profit_price"])
+        if mark_price <= stop:
+            logger.warning("[PAPER] Protective stop triggered at %.8g", mark_price)
+            return self._paper_fill(symbol, "sell", float(position["amount"]))
+        if mark_price >= target:
+            logger.info("[PAPER] Take-profit triggered at %.8g", mark_price)
+            return self._paper_fill(symbol, "sell", float(position["amount"]))
+        return None
 
     def amount_to_precision(self, symbol: str, amount: float) -> float:
         try:
