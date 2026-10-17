@@ -85,6 +85,14 @@ class TradingBot:
             f"Signal: {signal} | Equity: {equity:.2f} {quote_currency} | Pos: {position:.8g}"
         )
 
+        # Paper-mode protection is evaluated on every completed-candle close,
+        # not only when the strategy emits an RSI exit.
+        protective_exit = self.exchange.check_paper_protective_exit(self.symbol, price)
+        if protective_exit and protective_exit.get("status") == "closed":
+            self.strategy.on_filled("sell")
+            logger.info("Paper protective exit completed for %s", self.symbol)
+            return
+
         if signal == "BUY":
             self._handle_buy(price, equity, position)
         elif signal == "SELL":
