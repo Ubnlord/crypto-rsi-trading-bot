@@ -1,56 +1,44 @@
-# Deployment setup: identity and restricted PostgreSQL runtime
+# Deployment setup: Supabase Auth and restricted PostgreSQL runtime
 
-This is an operator runbook, not proof that production has been configured. Do not paste secrets into GitHub files, pull requests, logs, or chat.
+This is an operator runbook, not proof that the app deployment has been configured. Never paste secrets into GitHub files, pull requests, logs, or chat.
 
-## 1. Trusted identity provider
+## 1. Supabase Auth configuration
 
-Choose and configure the production identity provider first (for example, Auth0, Clerk, or another OIDC provider that publishes compatible JWKS). Create a dedicated API audience for this service and require access tokens issued for that audience.
+The trading SaaS uses the dedicated Supabase project `mavvurmaucnqtuizcznn`.
 
-Set these environment variables in the deployment platform's secret/environment settings:
-- `JWT_JWKS_URL`: HTTPS JWKS endpoint from the chosen provider's official discovery metadata.
-- `JWT_ISSUER`: exact issuer URL expected in the token.
-- `JWT_AUDIENCE`: exact API audience configured at the provider.
-- `DATABASE_URL`: connection string for the restricted runtime role below.
+In the API deployment environment, configure these non-secret identity values:
 
-The API currently accepts RS256 and ES256 JWTs, checks signature/issuer/audience/expiration/issued-at/subject, and requires the subject to be a UUID. Configure the provider's immutable user ID to be a UUID or implement an explicit, verified identity-to-`app_users.id` mapping before launch. Do not trust a client-provided user or tenant ID. Do not put provider client secrets or exchange credentials in the repository.
+- `JWT_JWKS_URL=https://mavvurmaucnqtuizcznn.supabase.co/auth/v1/.well-known/jwks.json`
+- `JWT_ISSUER=https://mavvurmaucnqtuizcznn.supabase.co/auth/v1`
+- `JWT_AUDIENCE=authenticated`
 
-Before launch, run issuer-backed integration tests for a valid token, wrong issuer, wrong audience, expired token, bad signature, unknown user, and disabled user. Current code does not yet reject a disabled `app_users` record, and this must be fixed before customer launch.
+The URL Configuration Site URL must eventually be the deployed app URL. While there is no deployment yet, keep `http://localhost:3000` for local development and add `http://localhost:3000/**` as a development redirect. Do not treat localhost as a production callback.
 
-## 2. Create a least-privilege PostgreSQL runtime role
+Email sign-in is enabled in the project. Email confirmation is enabled. The migration `004_supabase_auth_provisioning.sql` adds an `auth.users` trigger to create the corresponding `app_users` row and a personal starter workspace with owner membership. This trigger has been applied to the dedicated Supabase project. Do not manually create duplicate user rows.
 
-Run as a database administrator in the target database after reviewing `migrations/001_saas_core.sql`. Never use the database owner, superuser, or migration role as `DATABASE_URL`.
+The API accepts RS256 and ES256 JWTs and verifies signature, issuer, audience, expiry, issued-at and UUID subject. The Supabase Auth user UUID is the expected `sub`. The API checks the local `app_users` row and rejects unknown or disabled accounts. Before launch, test valid tokens plus wrong issuer, wrong audience, expired token, bad signature, unknown user and disabled user.
 
-In `psql`, run the following commands, substituting the actual database name. Use the interactive password prompt; do not put the password in shell history.
+## 2. Restricted PostgreSQL runtime role
+
+Never use the database owner, superuser, or migration role as the API's `DATABASE_URL`. Create a dedicated role in the Supabase SQL editor as an administrator, using a generated password stored only in deployment secrets:
 
 ```sql
 CREATE ROLE app_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-\password app_runtime
-GRANT CONNECT ON DATABASE YOUR_DATABASE_NAME TO app_runtime;
+GRANT CONNECT ON DATABASE postgres TO app_runtime;
 GRANT USAGE ON SCHEMA public TO app_runtime;
 GRANT SELECT ON app_users, tenants, tenant_memberships, exchange_connections,
   strategy_instances, order_intents, fills, audit_events TO app_runtime;
 GRANT EXECUTE ON FUNCTION app_is_tenant_member(uuid) TO app_runtime;
 ```
 
-The current API only reads these tables. Do not grant write privileges until write endpoints and their authorization/audit behavior have been implemented and reviewed. Grant read-only access to `app_users` only so the API can reject unknown or disabled accounts; do not grant writes to that table, schema creation, migrations, sequences, or role management to the runtime role.
+Set a strong password through a secure database/admin workflow; never commit it or paste it into chat. Configure the API's `DATABASE_URL` to use this role with TLS required. Verify `current_user = 'app_runtime'`, `rolsuper = false`, `rolcreatedb = false`, and `rolcreaterole = false`. Confirm the role is not a member of the owner/migration role.
 
-Set `DATABASE_URL` to use `app_runtime`, with TLS required by the database provider. Confirm with SQL that `current_user = 'app_runtime'`, `rolsuper = false`, `rolcreatedb = false`, and `rolcreaterole = false`. Verify RLS is enabled and forced on each tenant table and the runtime role is not a member of the owner/migration role.
+The current API only reads these tables. Do not grant write privileges until write endpoints and their authorization/audit behavior have been implemented and reviewed. Never grant the runtime role schema creation, migrations, sequence, or role-management privileges.
 
-## 3. Database isolation acceptance checks
+## 3. Required verification
 
-Run the PostgreSQL 16 CI integration tests against a fresh disposable database. Additionally, against a staging database:
-- customer A sees only A's tenant and tenant-owned records;
-- customer B sees only B's records;
-- cross-tenant SELECT returns no rows and cross-tenant writes fail;
-- no identity leaks between pooled/reused connections;
-- membership changes take effect immediately;
-- missing identity context returns no tenant data;
-- direct access as runtime role cannot bypass RLS.
+Run PostgreSQL 16 CI tests against a fresh disposable database; never run destructive integration-test cleanup against production. Verify that customer A and customer B cannot read or write each other's tenant records, missing identity context returns no tenant data, and database identity does not leak between pooled/reused connections.
 
-Never run destructive integration-test cleanup against production.
-
-## 4. Independent review gate
-
-Obtain a separate reviewer who did not implement this code. Request review of JWT validation and identity mapping, RLS policy/function ownership and grants, runtime-role privileges, tenant cross-reference constraints, audit integrity, connection pooling, and fail-closed behavior. Record the reviewer, reviewed commit SHA, findings, evidence, and explicit approval in the pull request.
+Supabase's security advisor is not a substitute for these tests or an independent review. Record the reviewer, commit SHA, evidence, findings and explicit approval in the pull request.
 
 Live execution and order submission must remain disabled until all tests pass and independent security plus trading-risk review explicitly approves the same commit SHA.
