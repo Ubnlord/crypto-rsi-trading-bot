@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import os
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -15,7 +17,7 @@ import ccxt
 import pandas as pd
 
 from config import config
-from paper_state import load_state, save_state, protective_levels
+from paper_state import append_trade_record, load_state, save_state, protective_levels
 from protective_orders import place_and_verify_oco
 
 logger = logging.getLogger(__name__)
@@ -166,7 +168,6 @@ class Exchange:
                 "stop_price": stop_price,
                 "take_profit_price": target_price,
             }
-            self._persist_paper_state()
             logger.info(
                 f"[PAPER] BUY {amount:.6f} {symbol} @ {execution_price:.8g} "
                 f"(fee {fee:.4f}, slippage {self.paper_slippage_pct:.3g}%) | "
@@ -198,10 +199,24 @@ class Exchange:
             else:
                 remaining = self.paper_positions[symbol]
                 self.paper_state["positions"][symbol]["amount"] = remaining
-            self._persist_paper_state()
+
+        order_id = f"paper-{uuid.uuid4().hex}"
+        append_trade_record(self.paper_state, {
+            "id": order_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "symbol": symbol,
+            "side": side,
+            "amount": float(amount),
+            "price": float(execution_price),
+            "fee": float(fee),
+            "cash_after": float(self.paper_balance),
+            "position_after": float(self.paper_positions.get(symbol, 0.0)),
+            "status": "closed",
+        })
+        self._persist_paper_state()
 
         return {
-            "id": f"paper-{int(time.time())}",
+            "id": order_id,
             "symbol": symbol,
             "side": side,
             "amount": amount,
