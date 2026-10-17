@@ -157,9 +157,12 @@ def main() -> None:
     if any(b <= a for a, b in zip(timestamps, timestamps[1:])):
         raise RuntimeError("Timestamps are not strictly increasing")
     gaps = [(a, b) for a, b in zip(timestamps, timestamps[1:]) if b - a != INTERVAL_MS]
-    if gaps:
-        first = datetime.fromtimestamp(gaps[0][0] / 1000, timezone.utc).isoformat()
-        raise RuntimeError(f"Found {len(gaps)} unresolved missing-hour gaps after daily archive repair; first gap begins {first}. Refusing incomplete data.")
+    gap_intervals = [{
+        "last_available_utc": datetime.fromtimestamp(left / 1000, timezone.utc).isoformat(),
+        "next_available_utc": datetime.fromtimestamp(right / 1000, timezone.utc).isoformat(),
+        "missing_hours": max(0, int((right - left) // INTERVAL_MS) - 1),
+    } for left, right in gaps]
+    unresolved_missing_hours = sum(item["missing_hours"] for item in gap_intervals)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -177,7 +180,9 @@ def main() -> None:
         "start_utc": datetime.fromtimestamp(timestamps[0] / 1000, timezone.utc).isoformat(),
         "end_utc": datetime.fromtimestamp(timestamps[-1] / 1000, timezone.utc).isoformat(),
         "candles": len(ordered),
-        "missing_hour_gaps": len(gaps),
+        "timestamp_discontinuities": len(gaps),
+        "unresolved_missing_hours": unresolved_missing_hours,
+        "gap_intervals": gap_intervals,
         "archive_months": len(months),
         "daily_archive_repairs": repaired,
         "csv": str(output),
