@@ -27,12 +27,12 @@ CREATE ROLE app_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 \password app_runtime
 GRANT CONNECT ON DATABASE YOUR_DATABASE_NAME TO app_runtime;
 GRANT USAGE ON SCHEMA public TO app_runtime;
-GRANT SELECT ON tenants, tenant_memberships, exchange_connections,
+GRANT SELECT ON app_users, tenants, tenant_memberships, exchange_connections,
   strategy_instances, order_intents, fills, audit_events TO app_runtime;
 GRANT EXECUTE ON FUNCTION app_is_tenant_member(uuid) TO app_runtime;
 ```
 
-The current API only reads these tables. Do not grant write privileges until write endpoints and their authorization/audit behavior have been implemented and reviewed. Do not grant access to `app_users`, schema creation, migrations, sequences, or role management to the runtime role.
+The current API only reads these tables. Do not grant write privileges until write endpoints and their authorization/audit behavior have been implemented and reviewed. Grant read-only access to `app_users` only so the API can reject unknown or disabled accounts; do not grant writes to that table, schema creation, migrations, sequences, or role management to the runtime role.
 
 Set `DATABASE_URL` to use `app_runtime`, with TLS required by the database provider. Confirm with SQL that `current_user = 'app_runtime'`, `rolsuper = false`, `rolcreatedb = false`, and `rolcreaterole = false`. Verify RLS is enabled and forced on each tenant table and the runtime role is not a member of the owner/migration role.
 
