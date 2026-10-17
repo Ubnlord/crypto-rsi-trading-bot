@@ -1,0 +1,42 @@
+name: Historical BTCUSDT Backtest
+
+on:
+  push:
+    branches: ["upgrade/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pandas numpy
+      - name: Download timestamped Binance BTCUSDT spot candles
+        run: python scripts/fetch_binance_ohlcv.py --start 2021-01-01T00:00:00Z --output data/BTCUSDT_1h.csv
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Run backtest and market-regime analysis
+        run: python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
+      - name: Compile Python modules
+        run: python -m py_compile strategy.py backtest.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py
+      - name: Save reproducibility artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: btcusdt-1h-historical-backtest
+          path: |
+            data/BTCUSDT_1h.csv
+            backtest-report.json
+          if-no-files-found: error
+          retention-days: 30
