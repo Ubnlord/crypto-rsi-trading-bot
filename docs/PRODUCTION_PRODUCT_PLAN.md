@@ -2,7 +2,7 @@
 
 ## Product objective
 
-Turn the RSI trading bot into a maintainable trading application for a single owner first, with a clear path to multi-user operation later. Support crypto exchange accounts and MetaTrader 5 forex accounts through separate adapters. Do not mix broker/exchange credentials, positions, risk calculations, or order lifecycles.
+Build a commercial multi-customer SaaS with tenant-isolated workspaces, automated RSI strategy instances, a responsive web dashboard, and an Android client using the same authenticated API. Support crypto exchange accounts and MetaTrader 5 forex accounts through separate adapters. Do not mix tenant data, broker/exchange credentials, positions, risk calculations, or order lifecycles.
 
 ## Production principles
 
@@ -62,12 +62,13 @@ Before enabling live order submission, add and test: daily loss stop, total open
 ## Immediate implementation order
 
 1. Keep existing strategy and hard live-execution gate.
-2. Add a production service/API and health checks without order submission.
-3. Introduce durable trade/order schema and reconciliation state machine.
-4. Implement and test Bybit spot connector, including native protective orders.
-5. Implement MT5 connector on a supported Windows host.
-6. Add the dashboard, alerts, deployment, backup and operational runbooks.
-7. Complete review and staged release gates.
+2. Add the API foundation and CI checks without order submission.
+3. Add tenant/user/membership and tenant-scoped trading records with RLS; complete authentication and role authorization before customer data endpoints.
+4. Implement durable order intent, idempotency, reconciliation, and audit state machine.
+5. Implement and test Bybit spot connector, including native protective orders; keep MT5 on a separate supported Windows service.
+6. Build a responsive web dashboard for mobile browsers, then a native Android client against the same authenticated API.
+7. Add billing/quotas, alerts, deployment, backups, incident response, and operational runbooks.
+8. Complete independent review and staged release gates.
 
 ## Explicit current limitations
 
