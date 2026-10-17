@@ -72,7 +72,7 @@ Never commit `.env` or share API keys. Public market data is sufficient for pape
 
 ## Live-trading release gates (not yet satisfied)
 
-Before any live use, separately implement and verify: exchange-side protective orders or a reliable monitored exit mechanism; confirmed fill reconciliation and partial-fill handling; safe handling of existing wallet balances; market precision/minimum-notional checks; persistent state across restarts; exchange-specific error/retry handling; comprehensive integration tests on an exchange sandbox; and an independent review of risk controls. This branch does not change `MODE` defaults and does not enable live trading.
+This branch has a hard code-level gate (`LIVE_EXECUTION_ENABLED = False`): setting `MODE=live` fails validation. Keep it that way until all release gates pass. Before any live use, separately implement and verify: exchange-native protective stop-loss and take-profit orders; confirmed fill reconciliation including partial fills; safe handling of existing wallet balances; market precision/minimum-notional checks; persistent state and reconciliation across restarts; exchange-specific error/retry handling; comprehensive integration tests on the selected exchange sandbox; and independent risk review. These capabilities have not yet been verified, and no live orders should be sent.
 
 ## Project structure
 
