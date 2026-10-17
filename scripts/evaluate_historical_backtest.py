@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+# Allow invocation as `python scripts/evaluate_historical_backtest.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import pandas as pd
