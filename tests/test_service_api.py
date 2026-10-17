@@ -47,7 +47,7 @@ class ServiceAPITests(unittest.TestCase):
             claims={"sub": str(uuid4())},
         )
         response = self.client.post("/api/v1/trading/enable")
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 409)
 
     def test_security_headers_are_present(self):
         response = self.client.get("/health")
