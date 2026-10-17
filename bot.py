@@ -149,9 +149,26 @@ class TradingBot:
             return
         amount = self.exchange.amount_to_precision(self.symbol, current_position)
         order = self.exchange.place_market_order(self.symbol, "sell", amount)
-        if order and order.get("status") in ("closed", "filled", None):
+        if order and order.get("status") in ("closed", "filled"):
+            filled_amount = float(order.get("filled") or order.get("amount") or amount)
+            if filled_amount <= 0:
+                logger.error("Sell order reported filled status without a positive filled amount")
+                return
+            if filled_amount + 1e-12 < current_position:
+                logger.critical(
+                    "Sell order only filled %.8g of %.8g; position reconciliation required. Stopping bot.",
+                    filled_amount, current_position
+                )
+                self.running = False
+                return
             self.strategy.on_filled("sell")
-            logger.info("Closed position: %s %s", amount, self.symbol)
+            logger.info("Closed position: %s %s", filled_amount, self.symbol)
+        elif order and float(order.get("filled") or 0) > 0:
+            logger.critical(
+                "Sell order %s has partial fill %.8g with status %s; stopping pending reconciliation",
+                order.get("id"), float(order.get("filled") or 0), order.get("status")
+            )
+            self.running = False
 
 
 def main():
