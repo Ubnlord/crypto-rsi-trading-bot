@@ -28,6 +28,7 @@ class PostgresTenantIsolationTests(unittest.TestCase):
                 c.execute(migration.read())
             c.execute("GRANT SELECT ON tenants, tenant_memberships, exchange_connections, strategy_instances, order_intents, fills, audit_events TO app_runtime")
             c.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_runtime")
+            c.execute("GRANT EXECUTE ON FUNCTION app_is_tenant_member(uuid) TO app_runtime")
             c.execute("GRANT INSERT, UPDATE, DELETE ON exchange_connections, strategy_instances, order_intents TO app_runtime")
         cls.user_a, cls.user_b = uuid.uuid4(), uuid.uuid4()
         cls.tenant_a, cls.tenant_b = uuid.uuid4(), uuid.uuid4()
