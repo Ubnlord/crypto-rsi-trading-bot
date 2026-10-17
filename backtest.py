@@ -66,7 +66,12 @@ def load_ohlcv(path: str | Path) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def run_backtest(\n    df: pd.DataFrame,\n    config: BacktestConfig = BacktestConfig(),\n    *,\n    trade_start_index: int = 0,\n) -> dict[str, Any]:
+def run_backtest(
+    df: pd.DataFrame,
+    config: BacktestConfig = BacktestConfig(),
+    *,
+    trade_start_index: int = 0,
+) -> dict[str, Any]:
     """Run a long-only spot simulation with fees, slippage and capped risk sizing."""
     if config.initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
@@ -81,7 +86,10 @@ def run_backtest(\n    df: pd.DataFrame,\n    config: BacktestConfig = BacktestC
     if config.rsi_period < 2 or config.ema_period < 2:
         raise ValueError("RSI and EMA periods must be at least 2")
 
-    if isinstance(trade_start_index, bool) or not isinstance(trade_start_index, int) or trade_start_index < 0:\n        raise ValueError("trade_start_index must be a non-negative integer")\n\n    data = df.copy().reset_index(drop=True)
+    if isinstance(trade_start_index, bool) or not isinstance(trade_start_index, int) or trade_start_index < 0:
+        raise ValueError("trade_start_index must be a non-negative integer")
+
+    data = df.copy().reset_index(drop=True)
     for col in ("open", "high", "low", "close", "volume"):
         if col in data:
             data[col] = pd.to_numeric(data[col], errors="raise")
@@ -141,7 +149,11 @@ def run_backtest(\n    df: pd.DataFrame,\n    config: BacktestConfig = BacktestC
             and (data["timestamp"].iloc[i] - data["timestamp"].iloc[i - 1]) != pd.Timedelta(hours=1)
         )
         signal = "HOLD"
-        if (\n            not has_timestamp_gap\n            and i >= max(config.rsi_period + 2, config.ema_period)\n            and i >= trade_start_index\n        ):
+        if (
+            not has_timestamp_gap
+            and i >= max(config.rsi_period + 2, config.ema_period)
+            and i >= trade_start_index
+        ):
             previous_rsi = float(rsi_values.iloc[i - 2])
             current_rsi = float(rsi_values.iloc[i - 1])
             previous_close = float(close_series.iloc[i - 1])
