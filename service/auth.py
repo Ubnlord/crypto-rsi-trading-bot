@@ -71,4 +71,14 @@ def require_principal(
         user_id = str(uuid.UUID(claims["sub"]))
     except (ValueError, TypeError, KeyError) as exc:
         raise HTTPException(status_code=401, detail="Token subject must be a user UUID") from exc
+    # A valid external token is not sufficient by itself: the local customer
+    # record must exist and must not be disabled.
+    from service.db import tenant_db
+    with tenant_db(user_id) as conn:
+        row = conn.execute(
+            "SELECT id FROM app_users WHERE id = %s AND disabled_at IS NULL",
+            (user_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Customer account is unknown or disabled")
     return Principal(user_id=user_id, issuer=claims["iss"], claims=claims)
