@@ -25,6 +25,7 @@ def default_state(initial_cash: float = 10_000.0) -> dict[str, Any]:
         "cash": float(initial_cash),
         "positions": {},
         "processed_order_ids": [],
+        "trade_journal": [],
     }
 
 
@@ -43,6 +44,34 @@ def validate_state(state: Any) -> dict[str, Any]:
         raise RuntimeError("Paper state has invalid processed order ID ledger")
     if len(order_ids) != len(set(order_ids)):
         raise RuntimeError("Paper state contains duplicate processed order IDs")
+
+    # Older schema-v1 state files predate the embedded journal; preserve their
+    # balances and add an empty journal rather than resetting portfolio state.
+    journal = state.setdefault("trade_journal", [])
+    if not isinstance(journal, list):
+        raise RuntimeError("Paper state has invalid trade journal")
+    journal_ids: set[str] = set()
+    for record in journal:
+        if not isinstance(record, dict):
+            raise RuntimeError("Paper state has invalid trade journal record")
+        required = ("id", "timestamp", "symbol", "side", "amount", "price", "fee", "cash_after")
+        if any(key not in record for key in required):
+            raise RuntimeError("Paper state has incomplete trade journal record")
+        if not isinstance(record["id"], str) or not record["id"] or record["id"] in journal_ids:
+            raise RuntimeError("Paper state has duplicate or invalid trade journal ID")
+        if not isinstance(record["timestamp"], str) or not record["timestamp"]:
+            raise RuntimeError("Paper state has invalid trade journal timestamp")
+        if not isinstance(record["symbol"], str) or not record["symbol"]:
+            raise RuntimeError("Paper state has invalid trade journal symbol")
+        if record["side"] not in ("buy", "sell"):
+            raise RuntimeError("Paper state has invalid trade journal side")
+        for key in ("amount", "price", "fee", "cash_after"):
+            value = record[key]
+            if not _finite_number(value) or value < 0 or (key in ("amount", "price") and value == 0):
+                raise RuntimeError(f"Paper state has invalid trade journal {key}")
+        journal_ids.add(record["id"])
+    if not journal_ids.issubset(set(order_ids)):
+        raise RuntimeError("Paper trade journal and processed order IDs disagree")
 
     for symbol, position in positions.items():
         if not isinstance(symbol, str) or not symbol or not isinstance(position, dict):
@@ -119,3 +148,21 @@ def protective_levels(entry_price: float, stop_loss_pct: float, take_profit_pct:
         entry_price * (1 - stop_loss_pct / 100),
         entry_price * (1 + take_profit_pct / 100),
     )
+
+
+def append_trade_record(state: dict[str, Any], record: dict[str, Any]) -> bool:
+    """Add a paper fill to the same atomically persisted state as its balances.
+
+    Returns False for an already-recorded ID, preventing duplicate journal entries
+    when an identical fill event is retried by a caller.
+    """
+    validate_state(state)
+    order_id = record.get("id")
+    if not isinstance(order_id, str) or not order_id:
+        raise ValueError("Trade journal record requires a non-empty id")
+    if order_id in state["processed_order_ids"]:
+        return False
+    state["trade_journal"].append(dict(record))
+    state["processed_order_ids"].append(order_id)
+    validate_state(state)
+    return True
