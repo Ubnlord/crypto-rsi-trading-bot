@@ -57,6 +57,20 @@ class BacktestTests(unittest.TestCase):
         self.assertEqual(first["summary"]["closed_trades"], 1)
         self.assertLess(first["summary"]["final_equity"], 1000)
 
+
+    def test_trade_start_index_suppresses_pre_holdout_entries(self):
+        data = candles([100, 100, 100, 100, 100, 100])
+        config = BacktestConfig(
+            initial_cash=1000, risk_per_trade_pct=1, max_position_pct=50,
+            stop_loss_pct=10, take_profit_pct=20, fee_pct=0.1,
+            slippage_pct=0, rsi_period=2, ema_period=2,
+        )
+        rsi_values = pd.Series([50.0, 25.0, 25.0, 35.0, 40.0, 40.0])
+        ema_values = pd.Series([99.0] * len(data))
+        with patch("backtest.compute_rsi", return_value=rsi_values), patch("backtest.compute_ema", return_value=ema_values):
+            result = run_backtest(data, config, trade_start_index=5)
+        self.assertEqual(result["summary"]["closed_trades"], 0)
+
     def test_missing_hour_forces_conservative_exit(self):
         data = candles([100, 100, 100, 100, 100, 100])
         timestamps = list(pd.date_range("2021-01-01", periods=6, freq="h", tz="UTC"))
