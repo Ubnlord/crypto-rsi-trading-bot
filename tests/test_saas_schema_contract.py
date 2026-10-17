@@ -31,7 +31,7 @@ class SaaSSchemaContractTests(unittest.TestCase):
     def test_secrets_are_external_references_and_live_is_not_default(self):
         self.assertIn("secret_ref text NOT NULL", self.sql)
         self.assertIn("DEFAULT 'paper' CHECK (execution_mode IN ('paper','demo','live'))", self.sql)
-        self.assertIn("Never store API keys or secrets in this table", self.sql)
+        self.assertIn("never store API keys or secrets in this table", self.sql)
 
     def test_audit_and_fill_rows_have_no_client_write_policies(self):
         self.assertNotIn("CREATE POLICY fills_member_all", self.sql)
