@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --upgrade pip pandas numpy python-dotenv
+        run: python -m pip install --upgrade pip pandas numpy python-dotenv ccxt
       - name: Download timestamped Binance BTCUSDT spot candles
         run: python scripts/fetch_binance_ohlcv.py --start 2021-01-01T00:00:00Z --output data/BTCUSDT_1h.csv
       - name: Run regression tests
@@ -30,7 +30,7 @@ jobs:
       - name: Run backtest and market-regime analysis
         run: PYTHONPATH=. python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
       - name: Compile Python modules
-        run: python -m py_compile strategy.py backtest.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py
+        run: python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py
       - name: Save reproducibility artifacts
         uses: actions/upload-artifact@v4
         with:
