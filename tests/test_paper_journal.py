@@ -80,6 +80,48 @@ class DurablePaperJournalTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "duplicate or invalid trade journal ID"):
             validate_state(state)
 
+
+    def test_repeated_fill_restart_cycles_keep_journal_and_balances_reconciled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "paper-state.json"
+            exchange = self.make_exchange(path)
+            for cycle in range(40):
+                buy = exchange._paper_fill("BTC/USD", "buy", 0.01, execution_price=100.0)
+                self.assertEqual(buy["status"], "closed")
+                # Simulate process restart after every buy by reconstructing from disk.
+                restored = load_state(path)
+                exchange = self.make_exchange(path)
+                exchange.paper_state = restored
+                exchange.paper_balance = float(restored["cash"])
+                exchange.paper_positions = {
+                    symbol: float(position["amount"])
+                    for symbol, position in restored["positions"].items()
+                }
+                exchange.paper_entry_price = {
+                    symbol: float(position["entry_price"])
+                    for symbol, position in restored["positions"].items()
+                }
+                sell = exchange._paper_fill("BTC/USD", "sell", 0.01, execution_price=101.0)
+                self.assertEqual(sell["status"], "closed")
+                restored = load_state(path)
+                self.assertEqual(restored["positions"], {})
+                self.assertEqual(len(restored["trade_journal"]), (cycle + 1) * 2)
+                self.assertEqual(len(restored["processed_order_ids"]), (cycle + 1) * 2)
+                self.assertAlmostEqual(
+                    restored["cash"], restored["trade_journal"][-1]["cash_after"]
+                )
+                # Recreate the process after each completed round trip as well.
+                exchange = self.make_exchange(path)
+                exchange.paper_state = restored
+                exchange.paper_balance = float(restored["cash"])
+                exchange.paper_positions = {}
+                exchange.paper_entry_price = {}
+            final = load_state(path)
+            ids = [record["id"] for record in final["trade_journal"]]
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertEqual(len(ids), 80)
+            self.assertEqual(final["positions"], {})
+
     def test_legacy_state_without_journal_keeps_existing_cash(self):
         state = default_state(500.0)
         del state["trade_journal"]
