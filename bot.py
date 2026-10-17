@@ -85,9 +85,17 @@ class TradingBot:
             f"Signal: {signal} | Equity: {equity:.2f} {quote_currency} | Pos: {position:.8g}"
         )
 
-        # Paper-mode protection is evaluated on every completed-candle close,
-        # not only when the strategy emits an RSI exit.
-        protective_exit = self.exchange.check_paper_protective_exit(self.symbol, price)
+        # Evaluate barriers against the completed candle's full range. OHLC
+        # cannot reveal intrabar ordering, so the paper simulator assumes stop
+        # first when both stop and target are touched within the same candle.
+        last_candle = df.iloc[-1]
+        protective_exit = self.exchange.check_paper_protective_exit(
+            self.symbol,
+            price,
+            candle_open=float(last_candle["open"]),
+            candle_high=float(last_candle["high"]),
+            candle_low=float(last_candle["low"]),
+        )
         if protective_exit and protective_exit.get("status") == "closed":
             self.strategy.on_filled("sell")
             logger.info("Paper protective exit completed for %s", self.symbol)
