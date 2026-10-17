@@ -68,8 +68,9 @@ def main() -> None:
     warmup = max(baseline.ema_period, selected["ema_period"], baseline.rsi_period + 2) + 2
     holdout_start = max(0, split - warmup)
     holdout = data.iloc[holdout_start:].reset_index(drop=True)
-    baseline_result = run_backtest(holdout, baseline)
-    selected_result = run_backtest(holdout, BacktestConfig(**selected))
+    trade_start_index = split - holdout_start
+    baseline_result = run_backtest(holdout, baseline, trade_start_index=trade_start_index)
+    selected_result = run_backtest(holdout, BacktestConfig(**selected), trade_start_index=trade_start_index)
 
     report = {
         "method": "chronological single holdout; small predeclared parameter grid; no holdout tuning",
@@ -81,7 +82,8 @@ def main() -> None:
         "training_candidates_ranked": candidates,
         "selected_config_from_training_only": selected,
         "holdout": {
-            "evaluation_start_index": split,\n            "trade_start_index_within_warmup_prefixed_slice": trade_start_index,
+            "evaluation_start_index": split,
+            "trade_start_index_within_warmup_prefixed_slice": trade_start_index,
             "warmup_prefix_candles_not_intended_for_trading": split - holdout_start,
             "baseline_config": asdict(baseline),
             "baseline_summary": baseline_result["summary"],
