@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS app_users (
   id uuid PRIMARY KEY,
   email text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  disabled_at timestamptz,
-  UNIQUE (lower(email))
+  disabled_at timestamptz
 );
+CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_lower_uidx ON app_users (lower(email));
 
 CREATE TABLE IF NOT EXISTS tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
