@@ -168,18 +168,19 @@ def append_trade_record(state: dict[str, Any], record: dict[str, Any]) -> bool:
     Returns False for an already-recorded ID, preventing duplicate journal entries
     when an identical fill event is retried by a caller.
     """
-    validate_state(state)
     order_id = record.get("id")
     if not isinstance(order_id, str) or not order_id:
         raise ValueError("Trade journal record requires a non-empty id")
     if order_id in state["processed_order_ids"]:
         return False
     candidate = dict(state)
-    candidate["trade_journal"] = list(state["trade_journal"])
-    candidate["processed_order_ids"] = list(state["processed_order_ids"])
+    candidate["trade_journal"] = list(state.get("trade_journal", []))
+    candidate["processed_order_ids"] = list(state.get("processed_order_ids", []))
+    candidate["cash"] = record.get("cash_after")
     candidate["trade_journal"].append(dict(record))
     candidate["processed_order_ids"].append(order_id)
     validate_state(candidate)
+    state["cash"] = candidate["cash"]
     state["trade_journal"] = candidate["trade_journal"]
     state["processed_order_ids"] = candidate["processed_order_ids"]
     return True
