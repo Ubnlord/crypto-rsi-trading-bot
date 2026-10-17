@@ -99,3 +99,12 @@ This branch has a hard code-level gate (`LIVE_EXECUTION_ENABLED = False`): setti
 ## License
 
 MIT — free to use, modify and learn from.
+
+
+## Bybit demo + MT5 forex safe stage
+
+This branch is configured for Bybit demo market-data routing and a **0.25% maximum planned risk budget per trade**. The live execution gate remains hard-disabled. In this stage, MODE=demo switches CCXT to Bybit's demo endpoint, but bot orders/fills remain local paper simulations; it does not submit demo orders. See [the demo validation plan](docs/DEMO_VALIDATION_PLAN.md) for exact limits and the gates still required.
+
+The separate `mt5_readonly.py` connector can read account details and completed candles only after verifying that MT5 reports demo trade mode and a server name containing “demo”. It has no order-sending method. The MetaTrader5 Python package normally requires a locally installed MT5 terminal on a supported Windows host, so this connector cannot be exercised from a typical Linux GitHub Codespace.
+
+Risk sizing helpers in `risk_controls.py` reject any risk percentage above 0.25% and round forex volume down to the broker's volume step. This is a planned-loss budget, not a guarantee against gaps, slippage, spreads, commissions or rejected/missing protection. Bybit native stop protection, actual demo-order integration, order reconciliation, and cross-market portfolio controls remain unverified and are required before any order-enabled demo phase. Do not enable live trading.
