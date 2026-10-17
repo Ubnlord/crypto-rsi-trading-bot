@@ -89,15 +89,22 @@ def main() -> None:
 
     unique = {}
     start_ms = int(start.timestamp() * 1000)
+
+    def timestamp_to_ms(value: str | int) -> int:
+        # Binance SPOT archive timestamps switched from milliseconds to
+        # microseconds on 2025-01-01; normalize each row before comparisons.
+        raw = int(value)
+        return raw // 1000 if raw >= 100_000_000_000_000 else raw
+
     for row in raw_rows:
-        open_ms = int(row[0])
-        close_ms = int(row[6]) if len(row) > 6 else open_ms + INTERVAL_MS - 1
+        open_ms = timestamp_to_ms(row[0])
+        close_ms = timestamp_to_ms(row[6]) if len(row) > 6 else open_ms + INTERVAL_MS - 1
         if start_ms <= open_ms <= end_ms and close_ms <= end_ms:
             unique[open_ms] = row
-    ordered = [unique[key] for key in sorted(unique)]
+    timestamps = sorted(unique)
+    ordered = [unique[key] for key in timestamps]
     if len(ordered) < 1000:
         raise RuntimeError(f"Expected a meaningful historical sample, received only {len(ordered)} candles")
-    timestamps = [int(row[0]) for row in ordered]
     if any(b <= a for a, b in zip(timestamps, timestamps[1:])):
         raise RuntimeError("Timestamps are not strictly increasing")
     gaps = [(a, b) for a, b in zip(timestamps, timestamps[1:]) if b - a != INTERVAL_MS]
@@ -110,8 +117,8 @@ def main() -> None:
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(FIELDS)
-        for row in ordered:
-            ts = datetime.fromtimestamp(int(row[0]) / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
+        for open_ms, row in zip(timestamps, ordered):
+            ts = datetime.fromtimestamp(open_ms / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
             writer.writerow([ts, row[1], row[2], row[3], row[4], row[5]])
     print(json.dumps({
         "source": "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1h/",
