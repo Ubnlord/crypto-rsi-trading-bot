@@ -9,14 +9,14 @@ The strategy now uses an RSI recovery entry with an EMA trend filter:
 - **Entry:** RSI crosses back above the oversold threshold, and the completed candle closes above the EMA trend filter (default EMA 200).
 - **Exit signal:** RSI crosses into overbought.
 - **Risk exits in backtests:** fixed stop-loss and take-profit levels, with gap-aware fills.
-- Paper positions now persist atomically to `data/paper-state.json`, including cash, entry price, stop and target levels; a corrupt state file fails closed rather than resetting the paper account. Paper stop/target exits are checked on each completed-candle close. These are simulated exits, not guaranteed fills at the trigger price.
+- Paper positions persist atomically to `data/paper-state.json`, including cash, entry price, stop and target levels. Paper fills model configurable adverse slippage and trading fees. Stop/target exits inspect the completed candle OHLC; when both barriers are touched, the simulator assumes the stop occurred first, and gap-through exits fill at the candle open. These are simulated exits, not exchange-side protection.
 
 The strategy requires enough candles to warm up both RSI and EMA. It intentionally returns HOLD until sufficient history is available.
 
 ## Paper recovery and execution safety
 
 - Paper state is persisted atomically to `PAPER_STATE_PATH` (default `data/paper-state.json`). If the file is corrupt or has an unsupported schema, startup fails instead of silently resetting balances.
-- Paper positions include entry, stop and target prices; stop/target triggers are evaluated from completed candle closes. Simulated paper fills are not exchange-side protection.
+- Paper fills apply `PAPER_SLIPPAGE_PCT` (default `0.05`) against the trader and `PAPER_FEE_PCT` (default `0.1`) to gross execution value on each side. Buy affordability includes fees; sell proceeds are calculated from the quantity actually held. These simple estimates do not reproduce every exchange fee tier, spread, partial fill or market impact.
 - Cumulative fill reconciliation helpers calculate only newly filled quantity and reject backwards-moving cumulative fill totals. The bot stops on any reported partial fill rather than pretending the position is reconciled.
 - The live execution gate remains hard-disabled. A fail-closed native OCO adapter requires an exchange-specific `create_oco_order` capability and verifies both order IDs/statuses. The current exchange configuration has **not** been sandbox-verified; do not enable live trading.
 - Still required before live approval: durable live-order/position journal, polling/canceling partially filled orders and reconciling against exchange balances, restart recovery from exchange truth, native OCO placement/cancel/replace tests on the chosen exchange sandbox, fees/precision/minimum-notional checks, and independent review. Unit tests of mocked adapters are not exchange integration evidence.
@@ -61,9 +61,9 @@ A workflow run has **not** been verified as successful until the actual run logs
 Run locally:
 
 ```bash
-python -m pip install pandas numpy
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
-python -m py_compile strategy.py backtest.py
+python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py
 ```
 
 GitHub Actions runs the unit tests and compilation checks on pushes to this upgrade branch and pull requests to `main`.
