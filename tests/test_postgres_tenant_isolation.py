@@ -24,12 +24,10 @@ class PostgresTenantIsolationTests(unittest.TestCase):
             c.execute("CREATE ROLE app_runtime NOLOGIN")
             c.execute("GRANT CONNECT ON DATABASE " + cls.owner.info.dbname + " TO app_runtime")
             c.execute("GRANT USAGE ON SCHEMA public TO app_runtime")
+            with open("migrations/001_saas_core.sql", encoding="utf-8") as migration:
+                c.execute(migration.read())
             c.execute("GRANT SELECT ON tenants, tenant_memberships, exchange_connections, strategy_instances, order_intents, fills, audit_events TO app_runtime")
-            c.execute("GRANT INSERT, UPDATE, DELETE ON exchange_connections, strategy_instances, order_intents TO app_runtime")
             c.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_runtime")
-            with open("migrations/001_saas_core.sql", encoding="utf-8") as f:
-                c.execute(f.read())
-            c.execute("GRANT SELECT ON tenants, tenant_memberships, exchange_connections, strategy_instances, order_intents, fills, audit_events TO app_runtime")
             c.execute("GRANT INSERT, UPDATE, DELETE ON exchange_connections, strategy_instances, order_intents TO app_runtime")
         cls.user_a, cls.user_b = uuid.uuid4(), uuid.uuid4()
         cls.tenant_a, cls.tenant_b = uuid.uuid4(), uuid.uuid4()
@@ -55,6 +53,7 @@ class PostgresTenantIsolationTests(unittest.TestCase):
                 c.execute("DROP SCHEMA public CASCADE")
                 c.execute("CREATE SCHEMA public")
                 c.execute("GRANT ALL ON SCHEMA public TO CURRENT_USER")
+                c.execute("REVOKE app_runtime FROM CURRENT_USER")
                 c.execute("DROP ROLE IF EXISTS app_runtime")
             cls.owner.close()
 
