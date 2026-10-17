@@ -35,7 +35,7 @@ The JSON report includes configuration, trades, equity curve, net return, win ra
 
 ## Automated historical market-data evaluation
 
-The `Historical BTCUSDT Backtest` workflow downloads hourly Binance **spot** candles from the public market-data endpoint, excluding the unfinished candle and rejecting duplicate or missing hourly timestamps. It evaluates the full sample from 2021 onward with 0.10% per-side fees and 0.05% per-side estimated slippage, and uploads the original CSV plus a JSON report as a 30-day workflow artifact.
+The `Historical BTCUSDT Backtest` workflow downloads hourly Binance **spot** candles from official public monthly ZIP archives, normalizes the archive's millisecond/microsecond timestamp formats, and attempts to repair missing hours from daily archives. It never fabricates candles: any unresolved gaps are recorded, and the backtester exits an open position at the next available open and suppresses entries on that discontinuous bar. It evaluates the full sample from 2021 onward with 0.10% per-side fees and 0.05% per-side estimated slippage, and uploads the CSV plus JSON report as a 30-day workflow artifact.
 
 Run the same analysis locally after installing pandas and numpy:
 
