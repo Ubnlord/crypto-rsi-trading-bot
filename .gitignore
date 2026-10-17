@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.env
+data/paper-state.json
+data/paper-state.json.*.tmp
+backtest-results.json
+backtest-report.json
