@@ -111,9 +111,11 @@ def main() -> None:
             engine = make_engine(state_path, args.cash, args.fee_pct, args.slippage_pct)
             counters["daily_restarts"] += 1
         last_day = day
+        has_timestamp_gap = False
         if last_timestamp is not None:
             delta = timestamp - last_timestamp
             if delta != pd.Timedelta(hours=1):
+                has_timestamp_gap = True
                 counters["timestamp_gaps"] += 1
                 counters["missed_candle_timestamps"].append({
                     "after": str(last_timestamp), "before": str(timestamp),
@@ -128,6 +130,23 @@ def main() -> None:
                 continue
             price = float(candle["close"])
             position = engine.paper_state["positions"].get(args.symbol)
+
+            # A gap means stop/target crossings during the missing interval are
+            # unknowable. Match the backtest's conservative policy: liquidate
+            # any open paper position at the next available open, and never
+            # initiate a new position on this discontinuous candle.
+            if position and has_timestamp_gap:
+                result = engine._paper_fill(
+                    args.symbol, "sell", float(position["amount"]),
+                    execution_price=float(candle["open"]),
+                )
+                if result.get("status") == "closed":
+                    engine.paper_state["trade_journal"][-1]["timestamp"] = timestamp.isoformat()
+                    engine.paper_state["trade_journal"][-1]["exit_reason"] = "data_gap_exit"
+                    save_state(state_path, engine.paper_state)
+                    continue
+                counters["rejected_fills"] += 1
+                continue
 
             # Protective exit logic is evaluated against each candle's OHLC.
             if position:
@@ -156,13 +175,13 @@ def main() -> None:
             if i > 0:
                 prior_prev_rsi = float(rsi.iloc[i - 2]) if i >= 2 else float("nan")
                 signal_buy = (
-                    not position and math.isfinite(prior_prev_rsi) and math.isfinite(previous_rsi)
+                    not has_timestamp_gap and not position and math.isfinite(prior_prev_rsi) and math.isfinite(previous_rsi)
                     and math.isfinite(float(ema.iloc[i - 1]))
                     and prior_prev_rsi <= args.oversold and previous_rsi > args.oversold
                     and prior_close > float(ema.iloc[i - 1])
                 )
                 signal_sell = (
-                    position and math.isfinite(prior_prev_rsi) and math.isfinite(previous_rsi)
+                    not has_timestamp_gap and position and math.isfinite(prior_prev_rsi) and math.isfinite(previous_rsi)
                     and prior_prev_rsi <= args.overbought and previous_rsi > args.overbought
                 )
             else:
