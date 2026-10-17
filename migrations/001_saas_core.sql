@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS strategy_instances (
   execution_mode text NOT NULL DEFAULT 'paper' CHECK (execution_mode IN ('paper','demo','live')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, id),
   FOREIGN KEY (tenant_id, connection_id) REFERENCES exchange_connections(tenant_id, id)
 );
 
