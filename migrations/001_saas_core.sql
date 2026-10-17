@@ -127,7 +127,7 @@ AS $$
   )
 $$;
 REVOKE ALL ON FUNCTION app_is_tenant_member(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app_is_tenant_member(uuid) TO PUBLIC;
+-- Grant EXECUTE only to the restricted runtime role during deployment bootstrap.
 
 DO $$
 DECLARE tbl text;
