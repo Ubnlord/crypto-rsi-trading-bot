@@ -35,8 +35,10 @@ jobs:
         run: PYTHONPATH=. python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
       - name: Run chronological holdout evaluation
         run: PYTHONPATH=. python scripts/walk_forward_backtest.py --csv data/BTCUSDT_1h.csv --output walk-forward-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
+      - name: Run durable historical paper trial with daily restarts
+        run: PYTHONPATH=. python scripts/run_paper_trial.py --csv data/BTCUSDT_1h.csv --state paper-trial-state.json --report paper-trial-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
       - name: Compile Python modules
-        run: python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py scripts/walk_forward_backtest.py
+        run: python -m py_compile config.py strategy.py risk.py backtest.py exchange.py bot.py paper_state.py protective_orders.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py scripts/walk_forward_backtest.py scripts/run_paper_trial.py
       - name: Save reproducibility artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -45,5 +47,7 @@ jobs:
             data/BTCUSDT_1h.csv
             backtest-report.json
             walk-forward-report.json
+            paper-trial-report.json
+            paper-trial-state.json
           if-no-files-found: error
           retention-days: 30
