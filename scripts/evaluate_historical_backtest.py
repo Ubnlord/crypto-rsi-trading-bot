@@ -75,7 +75,7 @@ def main() -> None:
         trade["entry_combined_regime"] = str(combined_labels.iloc[idx]) if pd.notna(combined_labels.iloc[idx]) else "warmup"
 
     result["data_quality"] = {
-        "source_expected": "Binance public spot klines API",
+        "source_expected": "Binance Vision official monthly spot kline archives",
         "symbol": "BTCUSDT",
         "timeframe": "1h",
         "candles": len(data),
