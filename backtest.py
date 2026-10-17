@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-from strategy import generate_signal
+from strategy import compute_ema, compute_rsi
 
 
 @dataclass(frozen=True)
@@ -121,17 +121,25 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
 
     entry_index = 0
     entry_timestamp: Any = None
+    # Compute indicators once. At execution index i, only indicator values through
+    # i-1 are visible, preserving next-candle execution without quadratic work.
+    close_series = data["close"].astype(float)
+    rsi_values = compute_rsi(close_series, config.rsi_period)
+    ema_values = compute_ema(close_series, config.ema_period)
     for i in range(1, len(data)):
         row = data.iloc[i]
         timestamp = row["timestamp"] if "timestamp" in data.columns else i
-        # Only candles strictly before this execution candle are used for signals.
-        signal, _, _ = generate_signal(
-            data.iloc[:i],
-            rsi_period=config.rsi_period,
-            oversold=config.oversold,
-            overbought=config.overbought,
-            ema_period=config.ema_period,
-        )
+        signal = "HOLD"
+        if i >= max(config.rsi_period + 2, config.ema_period):
+            previous_rsi = float(rsi_values.iloc[i - 2])
+            current_rsi = float(rsi_values.iloc[i - 1])
+            previous_close = float(close_series.iloc[i - 1])
+            trend_ema = float(ema_values.iloc[i - 1])
+            if pd.notna(previous_rsi) and pd.notna(current_rsi) and pd.notna(trend_ema):
+                if previous_rsi <= config.oversold and current_rsi > config.oversold and previous_close > trend_ema:
+                    signal = "BUY"
+                elif previous_rsi <= config.overbought and current_rsi > config.overbought:
+                    signal = "SELL"
         exited_this_bar = False
 
         if qty > 0:
@@ -187,6 +195,15 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
         if peak > 0:
             max_drawdown = max(max_drawdown, (peak - value) / peak * 100.0)
     net_profit = cash - config.initial_cash
+    total_fees = sum(float(t["entry_fee"]) + float(t["exit_fee"]) for t in trades)
+    # Slippage is modelled as a price haircut/lift on each side; report its
+    # approximate currency impact separately from exchange fees.
+    total_slippage = sum(
+        float(t["quantity"]) * (
+            float(t["entry_price"]) * (slip_rate / (1.0 + slip_rate))
+            + float(t["exit_price"]) * (slip_rate / (1.0 - slip_rate))
+        ) for t in trades
+    )
     return {
         "config": asdict(config),
         "summary": {
@@ -199,7 +216,13 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
             "losses": len(losses),
             "win_rate_pct": round(len(wins) / len(trades) * 100.0, 2) if trades else 0.0,
             "max_drawdown_pct": round(max_drawdown, 4),
-            "cost_model": "fee and slippage charged on entry and exit",
+            "total_fees_paid": round(total_fees, 2),
+            "estimated_slippage_cost": round(total_slippage, 2),
+            "total_estimated_trading_cost": round(total_fees + total_slippage, 2),
+            "data_start": str(data["timestamp"].iloc[0]) if "timestamp" in data.columns else None,
+            "data_end": str(data["timestamp"].iloc[-1]) if "timestamp" in data.columns else None,
+            "candles": len(data),
+            "cost_model": "fee and estimated slippage charged on entry and exit",
         },
         "trades": trades,
         "equity_curve": [round(value, 8) for value in equity_curve],
