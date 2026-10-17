@@ -33,5 +33,11 @@ class ServiceAPITests(unittest.TestCase):
         response = self.client.post("/api/v1/trading/enable")
         self.assertEqual(response.status_code, 409)
 
+    def test_security_headers_are_present(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
 if __name__ == "__main__":
     unittest.main()
