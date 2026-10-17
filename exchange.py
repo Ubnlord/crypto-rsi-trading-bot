@@ -16,6 +16,7 @@ import pandas as pd
 
 from config import config
 from paper_state import load_state, save_state, protective_levels
+from protective_orders import place_and_verify_oco
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,21 @@ class Exchange:
         except Exception as e:
             logger.error(f"Order failed: {e}")
             return None
+
+    def place_protective_oco(
+        self, symbol: str, amount: float, entry_price: float
+    ) -> Dict[str, Any]:
+        """Place and verify native exchange OCO protection; never emulate it."""
+        if not self.config.is_live:
+            raise RuntimeError("Native exchange orders are unavailable in paper mode")
+        stop_price, target_price = protective_levels(
+            entry_price, self.config.stop_loss_pct, self.config.take_profit_pct
+        )
+        stop_price = self.price_to_precision(symbol, stop_price)
+        target_price = self.price_to_precision(symbol, target_price)
+        return place_and_verify_oco(
+            self.exchange, symbol, amount, stop_price, target_price
+        )
 
     def _paper_fill(self, symbol: str, side: str, amount: float) -> Dict[str, Any]:
         ticker = self.exchange.fetch_ticker(symbol)
