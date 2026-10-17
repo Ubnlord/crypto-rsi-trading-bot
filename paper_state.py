@@ -69,7 +69,19 @@ def validate_state(state: Any) -> dict[str, Any]:
             value = record[key]
             if not _finite_number(value) or value < 0 or (key in ("amount", "price") and value == 0):
                 raise RuntimeError(f"Paper state has invalid trade journal {key}")
+        if "position_after" in record and (not _finite_number(record["position_after"]) or record["position_after"] < 0):
+            raise RuntimeError("Paper state has invalid trade journal position_after")
         journal_ids.add(record["id"])
+    if journal and abs(float(journal[-1]["cash_after"]) - float(cash)) > 1e-8:
+        raise RuntimeError("Paper cash balance does not reconcile to the latest trade journal record")
+    last_position_record: dict[str, dict[str, Any]] = {}
+    for record in journal:
+        if "position_after" in record:
+            last_position_record[record["symbol"]] = record
+    for symbol, record in last_position_record.items():
+        persisted_amount = float(positions.get(symbol, {}).get("amount", 0.0))
+        if abs(persisted_amount - float(record["position_after"])) > 1e-8:
+            raise RuntimeError(f"Paper position for {symbol} does not reconcile to trade journal")
     if not journal_ids.issubset(set(order_ids)):
         raise RuntimeError("Paper trade journal and processed order IDs disagree")
 
@@ -162,7 +174,12 @@ def append_trade_record(state: dict[str, Any], record: dict[str, Any]) -> bool:
         raise ValueError("Trade journal record requires a non-empty id")
     if order_id in state["processed_order_ids"]:
         return False
-    state["trade_journal"].append(dict(record))
-    state["processed_order_ids"].append(order_id)
-    validate_state(state)
+    candidate = dict(state)
+    candidate["trade_journal"] = list(state["trade_journal"])
+    candidate["processed_order_ids"] = list(state["processed_order_ids"])
+    candidate["trade_journal"].append(dict(record))
+    candidate["processed_order_ids"].append(order_id)
+    validate_state(candidate)
+    state["trade_journal"] = candidate["trade_journal"]
+    state["processed_order_ids"] = candidate["processed_order_ids"]
     return True
