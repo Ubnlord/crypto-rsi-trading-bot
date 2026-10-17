@@ -48,7 +48,7 @@ class BacktestTests(unittest.TestCase):
         # At execution index 4, completed candles show RSI recovering above
         # oversold with price above EMA. The open position closes at end of data.
         rsi_values = pd.Series([50.0, 25.0, 25.0, 35.0, 40.0, 40.0])
-        ema_values = pd.Series([100.0] * len(data))
+        ema_values = pd.Series([99.0] * len(data))
         with patch("backtest.compute_rsi", return_value=rsi_values), patch("backtest.compute_ema", return_value=ema_values):
             first = run_backtest(data, config)
         with patch("backtest.compute_rsi", return_value=rsi_values), patch("backtest.compute_ema", return_value=ema_values):
