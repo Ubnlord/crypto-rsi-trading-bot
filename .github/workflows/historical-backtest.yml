@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --upgrade pip pandas numpy
+        run: python -m pip install --upgrade pip pandas numpy python-dotenv
       - name: Download timestamped Binance BTCUSDT spot candles
         run: python scripts/fetch_binance_ohlcv.py --start 2021-01-01T00:00:00Z --output data/BTCUSDT_1h.csv
       - name: Run regression tests
