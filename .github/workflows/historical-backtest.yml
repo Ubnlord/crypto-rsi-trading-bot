@@ -28,7 +28,7 @@ jobs:
       - name: Run regression tests
         run: python -m unittest discover -s tests -v
       - name: Run backtest and market-regime analysis
-        run: python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
+        run: PYTHONPATH=. python scripts/evaluate_historical_backtest.py --csv data/BTCUSDT_1h.csv --output backtest-report.json --cash 10000 --fee-pct 0.1 --slippage-pct 0.05
       - name: Compile Python modules
         run: python -m py_compile strategy.py backtest.py scripts/fetch_binance_ohlcv.py scripts/evaluate_historical_backtest.py
       - name: Save reproducibility artifacts
