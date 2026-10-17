@@ -6,16 +6,17 @@ authorization, TLS, rate limits, and secret management are implemented.
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-app = FastAPI(title="RSI Trading Platform API", version="0.1.0")
+app = FastAPI(title="RSI Trading Platform API", version="0.2.0")
 LIVE_EXECUTION_ENABLED = False
+ORDER_SUBMISSION_ENABLED = False
 MAX_RISK_PER_TRADE_PCT = 0.25
+
 
 class ServiceStatus(BaseModel):
     service: str
@@ -24,15 +25,30 @@ class ServiceStatus(BaseModel):
     order_submission_enabled: bool
     timestamp: str
 
+
 class RiskPolicy(BaseModel):
     max_risk_per_trade_pct: float
     max_position_notional_pct: float
     max_open_positions: int
     fail_closed: bool
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Set baseline browser security headers; this is not a replacement for TLS/auth."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    return response
+
+
 @app.get("/health", response_model=dict[str, str])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "rsi-trading-platform"}
+
 
 @app.get("/api/v1/status", response_model=ServiceStatus)
 def status() -> ServiceStatus:
@@ -40,9 +56,10 @@ def status() -> ServiceStatus:
         service="rsi-trading-platform",
         status="ready-for-integration",
         live_execution_enabled=LIVE_EXECUTION_ENABLED,
-        order_submission_enabled=False,
+        order_submission_enabled=ORDER_SUBMISSION_ENABLED,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+
 
 @app.get("/api/v1/risk-policy", response_model=RiskPolicy)
 def risk_policy() -> RiskPolicy:
@@ -53,6 +70,10 @@ def risk_policy() -> RiskPolicy:
         fail_closed=True,
     )
 
+
 @app.post("/api/v1/trading/enable")
 def enable_trading() -> Any:
-    raise HTTPException(status_code=409, detail="Order execution is locked until connector integration, reconciliation, authentication, and independent review are complete.")
+    raise HTTPException(
+        status_code=409,
+        detail="Order execution is locked until connector integration, reconciliation, authentication, and independent review are complete.",
+    )
