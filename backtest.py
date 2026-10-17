@@ -85,6 +85,10 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
     for col in ("open", "high", "low", "close", "volume"):
         if col in data:
             data[col] = pd.to_numeric(data[col], errors="raise")
+    if "timestamp" in data.columns:
+        data["timestamp"] = pd.to_datetime(data["timestamp"], utc=True, errors="raise")
+        if not data["timestamp"].is_monotonic_increasing or data["timestamp"].duplicated().any():
+            raise ValueError("Timestamps must be unique and strictly increasing")
     _validate_ohlcv(data)
     if len(data) < max(config.rsi_period + 2, config.ema_period):
         raise ValueError("Not enough candles for selected RSI/EMA periods")
@@ -121,6 +125,9 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
 
     entry_index = 0
     entry_timestamp: Any = None
+    timestamp_gaps = 0
+    if "timestamp" in data.columns:
+        timestamp_gaps = int((data["timestamp"].diff().dropna() != pd.Timedelta(hours=1)).sum())
     # Compute indicators once. At execution index i, only indicator values through
     # i-1 are visible, preserving next-candle execution without quadratic work.
     close_series = data["close"].astype(float)
@@ -129,8 +136,12 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
     for i in range(1, len(data)):
         row = data.iloc[i]
         timestamp = row["timestamp"] if "timestamp" in data.columns else i
+        has_timestamp_gap = (
+            "timestamp" in data.columns
+            and (data["timestamp"].iloc[i] - data["timestamp"].iloc[i - 1]) != pd.Timedelta(hours=1)
+        )
         signal = "HOLD"
-        if i >= max(config.rsi_period + 2, config.ema_period):
+        if not has_timestamp_gap and i >= max(config.rsi_period + 2, config.ema_period):
             previous_rsi = float(rsi_values.iloc[i - 2])
             current_rsi = float(rsi_values.iloc[i - 1])
             previous_close = float(close_series.iloc[i - 1])
@@ -143,7 +154,13 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
         exited_this_bar = False
 
         if qty > 0:
-            if float(row["open"]) <= stop_price:
+            if has_timestamp_gap:
+                # The missing interval cannot be inspected for stop/target hits.
+                # Exit at the next available open with slippage and do not open
+                # a new position on this discontinuous bar.
+                close_position(float(row["open"]), timestamp, i, "data_gap_exit")
+                exited_this_bar = True
+            elif float(row["open"]) <= stop_price:
                 close_position(float(row["open"]), timestamp, i, "stop_gap")
                 exited_this_bar = True
             elif float(row["open"]) >= target_price:
@@ -222,6 +239,8 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig = BacktestConfig()) ->
             "data_start": str(data["timestamp"].iloc[0]) if "timestamp" in data.columns else None,
             "data_end": str(data["timestamp"].iloc[-1]) if "timestamp" in data.columns else None,
             "candles": len(data),
+            "timestamp_gaps": timestamp_gaps,
+            "gap_policy": "exit any open position at the next available open; suppress entries on gap bars",
             "cost_model": "fee and estimated slippage charged on entry and exit",
         },
         "trades": trades,
