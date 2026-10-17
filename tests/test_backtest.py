@@ -1,5 +1,7 @@
 import unittest
 from unittest.mock import patch
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
@@ -43,30 +45,26 @@ class BacktestTests(unittest.TestCase):
             stop_loss_pct=10, take_profit_pct=20, fee_pct=0.1,
             slippage_pct=0, rsi_period=2, ema_period=2,
         )
-        # Force one entry on the first available signal check; later calls HOLD.
-        with patch("backtest.generate_signal", side_effect=[
-            ("BUY", 100, 25), ("HOLD", 100, 40), ("HOLD", 100, 45),
-            ("HOLD", 100, 50), ("HOLD", 100, 50),
-        ]):
+        signals = [("BUY", 100, 25), ("HOLD", 100, 40), ("HOLD", 100, 45),
+                   ("HOLD", 100, 50), ("HOLD", 100, 50)]
+        with patch("backtest.generate_signal", side_effect=signals):
             first = run_backtest(data, config)
-        with patch("backtest.generate_signal", side_effect=[
-            ("BUY", 100, 25), ("HOLD", 100, 40), ("HOLD", 100, 45),
-            ("HOLD", 100, 50), ("HOLD", 100, 50),
-        ]):
+        with patch("backtest.generate_signal", side_effect=signals):
             second = run_backtest(data, config)
         self.assertEqual(first, second)
         self.assertEqual(first["summary"]["closed_trades"], 1)
         self.assertLess(first["summary"]["final_equity"], 1000)
 
-    def test_bad_ohlcv_is_rejected(self):
+    def test_csv_loader_rejects_invalid_ohlcv(self):
         data = candles([100, 101, 102])
         data.loc[1, "high"] = 1
-        with self.assertRaises(ValueError):
-            run_backtest(data, BacktestConfig(rsi_period=2, ema_period=2))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.csv"
+            data.to_csv(path, index=False)
+            with self.assertRaises(ValueError):
+                load_ohlcv(path)
 
     def test_csv_loader_rejects_missing_columns(self):
-        import tempfile
-        from pathlib import Path
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.csv"
             path.write_text("close,open\n1,1\n2,2\n3,3\n", encoding="utf-8")
