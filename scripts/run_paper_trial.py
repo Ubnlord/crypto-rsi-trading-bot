@@ -202,8 +202,9 @@ def main() -> None:
             for symbol, saved_position in saved["positions"].items():
                 if abs(float(saved_position["amount"]) - engine.paper_positions.get(symbol, 0.0)) > 1e-8:
                     raise RuntimeError(f"persisted quantity mismatch for {symbol}")
-            position_value = sum(float(p["amount"]) * float(candle["close"]) for p in saved["positions"].values())
-            equity_now = float(saved["cash"]) + position_value
+            gross_position_value = sum(float(p["amount"]) * float(candle["close"]) for p in saved["positions"].values())
+            liquidation_factor = (1 - args.slippage_pct / 100) * (1 - args.fee_pct / 100)
+            equity_now = float(saved["cash"]) + gross_position_value * liquidation_factor
             equity_peak = max(equity_peak, equity_now)
             if equity_peak > 0:
                 max_drawdown_pct = max(max_drawdown_pct, (equity_peak - equity_now) / equity_peak * 100.0)
@@ -249,7 +250,7 @@ def main() -> None:
         "ending_equity": round(final_equity, 8),
         "net_pnl": round(pnl, 8),
         "net_return_pct": round(pnl / args.cash * 100, 6),
-        "closed_trades": len(journal) // 2,
+        "closed_trades": sum(1 for record in journal if record["side"] == "sell"),
         "signal_entries": counters["signal_entries"],
         "signal_exits": counters["signal_exits"],
         "protective_exit_attempts": counters["protective_exit_attempts"],
