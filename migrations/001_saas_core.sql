@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS order_intents (
   requested_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, client_order_id),
+  UNIQUE (tenant_id, id),
   FOREIGN KEY (tenant_id, strategy_id) REFERENCES strategy_instances(tenant_id, id)
 );
 
