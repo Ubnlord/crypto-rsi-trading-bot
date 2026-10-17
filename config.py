@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Hard release gate: this branch must not submit real orders until exchange-side
+# protection, reconciliation, restart recovery, and sandbox tests are reviewed.
+LIVE_EXECUTION_ENABLED = False
+
 
 @dataclass
 class Config:
@@ -38,11 +42,17 @@ class Config:
 
     @property
     def is_live(self) -> bool:
-        return self.mode == "live" and bool(self.api_key) and bool(self.api_secret)
+        return LIVE_EXECUTION_ENABLED and self.mode == "live" and bool(self.api_key) and bool(self.api_secret)
 
     def validate(self) -> None:
         if self.mode not in ("paper", "live"):
             raise ValueError("MODE must be 'paper' or 'live'")
+        if self.mode == "live" and not LIVE_EXECUTION_ENABLED:
+            raise ValueError(
+                "Live execution is disabled in this build. Keep MODE=paper until "
+                "protective orders, partial-fill reconciliation, restart recovery, "
+                "and exchange sandbox tests have passed independent review."
+            )
         if self.rsi_period < 2 or self.ema_period < 2:
             raise ValueError("RSI_PERIOD and EMA_PERIOD must be at least 2")
         if not 0 < self.rsi_oversold < self.rsi_overbought < 100:
