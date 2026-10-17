@@ -241,7 +241,12 @@ class Exchange:
         open_price = float(candle_open) if candle_open is not None else mark_price
         high = float(candle_high) if candle_high is not None else mark_price
         low = float(candle_low) if candle_low is not None else mark_price
-        if min(open_price, high, low, mark_price) <= 0 or low > high:
+        if (
+            min(open_price, high, low, mark_price) <= 0
+            or low > high
+            or not low <= open_price <= high
+            or not low <= mark_price <= high
+        ):
             logger.error("[PAPER] Invalid OHLC values; refusing protective exit evaluation")
             return None
 
