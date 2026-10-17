@@ -143,7 +143,7 @@ END $$;
 DROP POLICY IF EXISTS tenants_member_select ON tenants;
 CREATE POLICY tenants_member_select ON tenants FOR SELECT USING (app_is_tenant_member(id));
 DROP POLICY IF EXISTS memberships_member_select ON tenant_memberships;
-CREATE POLICY memberships_member_select ON tenant_memberships FOR SELECT USING (app_is_tenant_member(tenant_id));
+CREATE POLICY memberships_self_select ON tenant_memberships FOR SELECT USING (user_id = app_current_user_id());
 DROP POLICY IF EXISTS connections_member_all ON exchange_connections;
 CREATE POLICY connections_member_all ON exchange_connections USING (app_is_tenant_member(tenant_id)) WITH CHECK (app_is_tenant_member(tenant_id));
 DROP POLICY IF EXISTS strategies_member_all ON strategy_instances;
