@@ -1,12 +1,12 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bot as bot_module
 
 
 class BotRestartRecoveryTests(unittest.TestCase):
     def test_existing_persisted_position_restores_strategy_exit_state(self):
-        exchange = unittest.mock.Mock()
+        exchange = Mock()
         exchange.get_position_amount.return_value = 0.25
         with patch.object(bot_module.config, "validate"), \
              patch.object(bot_module, "Exchange", return_value=exchange), \
