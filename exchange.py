@@ -38,6 +38,15 @@ class Exchange:
                 params["password"] = config.api_passphrase
 
         self.exchange: ccxt.Exchange = exchange_class(params)
+        # Bybit demo trading and Bybit testnet are different environments.
+        # Select the official demo endpoint immediately after construction and
+        # before load_markets or any other request. Orders remain paper-only.
+        if config.mode == "demo":
+            enable_demo = getattr(self.exchange, "enable_demo_trading", None)
+            if not callable(enable_demo):
+                raise RuntimeError("This exchange adapter does not support demo trading")
+            enable_demo(True)
+            logger.info("Bybit DEMO endpoint selected; bot orders remain local paper simulations")
         self.paper_state_path = Path(os.getenv("PAPER_STATE_PATH", "data/paper-state.json"))
         self.paper_fee_pct = float(os.getenv("PAPER_FEE_PCT", "0.1"))
         self.paper_slippage_pct = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.05"))

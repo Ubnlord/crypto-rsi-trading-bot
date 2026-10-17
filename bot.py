@@ -49,7 +49,7 @@ class TradingBot:
         logger.info(f"Exchange : {config.exchange_id}")
         logger.info(f"Symbol   : {self.symbol}")
         logger.info(f"Timeframe: {config.timeframe}")
-        logger.info(f"Mode     : {'LIVE' if config.is_live else 'PAPER'}")
+        logger.info(f"Mode     : {'LIVE' if config.is_live else ('BYBIT DEMO DATA + PAPER FILLS' if config.mode == 'demo' else 'PAPER')}")
         logger.info(
             f"Strategy : RSI({config.rsi_period}) recovery + EMA({config.ema_period}) "
             f"trend filter [{config.rsi_oversold}/{config.rsi_overbought}]"

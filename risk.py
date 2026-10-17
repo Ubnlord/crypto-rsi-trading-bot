@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from config import config
+from config import MAX_RISK_PER_TRADE_PCT, config
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,19 @@ def calculate_position_size(
     amount = (equity * risk_pct / 100) / (price * stop_loss_pct / 100)
     Capped by max_position_pct of equity.
     """
-    stop_loss_pct = stop_loss_pct or config.stop_loss_pct
-    risk_pct = risk_pct or config.risk_per_trade_pct
-    max_position_pct = max_position_pct or config.max_position_pct
+    stop_loss_pct = config.stop_loss_pct if stop_loss_pct is None else stop_loss_pct
+    risk_pct = config.risk_per_trade_pct if risk_pct is None else risk_pct
+    max_position_pct = config.max_position_pct if max_position_pct is None else max_position_pct
 
-    if price <= 0 or stop_loss_pct <= 0:
+    if not all(map(lambda x: isinstance(x, (int, float)) and x == x and abs(x) != float("inf"),
+                   (equity, price, stop_loss_pct, risk_pct, max_position_pct))):
+        raise ValueError("Risk sizing inputs must be finite numbers")
+    if equity <= 0 or price <= 0 or stop_loss_pct <= 0:
         return 0.0
+    if not 0 < risk_pct <= MAX_RISK_PER_TRADE_PCT:
+        raise ValueError("Risk per trade must be greater than 0 and at most 0.25%")
+    if not 0 < max_position_pct <= 100:
+        raise ValueError("MAX_POSITION_PCT must be greater than 0 and at most 100")
 
     risk_amount = equity * (risk_pct / 100.0)
     stop_distance = price * (stop_loss_pct / 100.0)
