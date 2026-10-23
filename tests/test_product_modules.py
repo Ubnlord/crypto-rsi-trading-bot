@@ -21,6 +21,19 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(trades[0]["id"], trade_id)
             self.assertEqual(trades[0]["symbol"], "BTC/USD")
 
+    def test_order_intent_is_persisted_before_network_submission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "bot.sqlite3")
+            first = TradingStore(path)
+            first.create_order_intent("rsi-test-123", "BTC/USDT", "buy", 0.01)
+            second = TradingStore(path)
+            pending = second.pending_order_intents()
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0]["client_order_id"], "rsi-test-123")
+            second.update_order_intent("rsi-test-123", status="unknown",
+                                       last_error="simulated timeout")
+            self.assertEqual(second.pending_order_intents()[0]["status"], "unknown")
+
     def test_invalid_trade_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             store = TradingStore(str(Path(directory) / "bot.sqlite3"))
