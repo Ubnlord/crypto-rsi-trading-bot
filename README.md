@@ -1,125 +1,80 @@
-# Real Crypto Trading Robot (Python + ccxt)
+# Crypto RSI Trading Bot
 
-A clean, modular **live-capable** trading bot for cryptocurrency using the **RSI Mean-Reversion** strategy.
+A Python cryptocurrency trading bot built on [ccxt](https://github.com/ccxt/ccxt), using an RSI mean-reversion strategy with paper trading as the default.
 
-**This is educational software.**  
-Trading cryptocurrencies involves a high risk of losing money. Past performance is not indicative of future results. You are solely responsible for any trades placed with this code.
+> **Risk warning:** This is educational software, not financial advice. Crypto trading can cause substantial or total loss. Paper results do not predict live performance. Live trading is disabled unless explicitly configured, and you remain responsible for every trade.
 
----
+## Product capabilities
 
-## Features
+- Unified market data through supported ccxt exchanges.
+- Paper trading by default, using live market prices and simulated fills.
+- Explicit live mode with a fail-closed credential check.
+- Configurable RSI thresholds, position sizing, and exposure limits.
+- Graceful shutdown and structured application logs.
+- Regression tests for RSI edge cases and invalid market data.
 
-- **ccxt** unified connector → works with Binance, Bybit, Kraken, Coinbase, OKX, and 100+ others
-- **Paper mode by default** (simulated fills with real market data)
-- **Live mode** only when you explicitly set `MODE=live` + provide API keys
-- RSI mean-reversion strategy (easily replaceable)
-- Basic risk management (fixed fractional position sizing + max position %)
-- Clean logging
-- Graceful shutdown (Ctrl+C)
-
----
-
-## Quick Start
-
-### 1. Install
+## Quick start
 
 ```bash
-cd trading_bot
+git clone https://github.com/Ubnlord/crypto-rsi-trading-bot.git
+cd crypto-rsi-trading-bot
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
 cp .env.example .env
-# Edit .env with your preferred settings
-```
-
-Important settings:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MODE` | `paper` (safe) or `live` | `paper` |
-| `EXCHANGE_ID` | ccxt exchange id | `binance` |
-| `API_KEY` / `API_SECRET` | Your keys (only needed for live) | empty |
-| `SYMBOL` | Trading pair | `BTC/USDT` |
-| `TIMEFRAME` | Candle size | `15m` |
-| `RSI_PERIOD` / `RSI_OVERSOLD` / `RSI_OVERBOUGHT` | Strategy params | 14 / 30 / 70 |
-| `RISK_PER_TRADE_PCT` | % of equity risked per trade | 1.0 |
-| `STOP_LOSS_PCT` | Used for position sizing | 2.0 |
-
-### 3. Run (Paper first!)
-
-```bash
 python bot.py
 ```
 
-You should see live prices + RSI values and simulated BUY/SELL when conditions are met.
+On Windows, create the environment file with `Copy-Item .env.example .env` if `cp` is unavailable.
 
-### 4. Go Live (ONLY after thorough testing)
+## Configuration
 
-1. Create **API keys** on your exchange with **trading permissions only** (no withdrawal).
-2. Restrict keys by IP if possible.
-3. Set in `.env`:
-   ```
-   MODE=live
-   API_KEY=your_key
-   API_SECRET=your_secret
-   ```
-4. Start with very small size (`RISK_PER_TRADE_PCT=0.25` or lower).
-5. Run and monitor closely.
+Edit `.env`. Never commit credentials or paste them into issues.
 
----
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MODE` | `paper` | `paper` or explicitly enabled `live` |
+| `EXCHANGE_ID` | `kraken` | Exchange identifier supported by ccxt |
+| `SYMBOL` | `BTC/USD` | Market symbol in ccxt format |
+| `TIMEFRAME` | `15m` | Candle interval |
+| `CANDLE_LIMIT` | `100` | Number of candles fetched |
+| `RSI_PERIOD` | `14` | RSI lookback |
+| `RSI_OVERSOLD` / `RSI_OVERBOUGHT` | `30` / `70` | Signal thresholds |
+| `RISK_PER_TRADE_PCT` | `1.0` | Intended equity risk per trade |
+| `MAX_POSITION_PCT` | `10.0` | Maximum position notional as a percentage of equity |
+| `STOP_LOSS_PCT` | `2.0` | Distance used for position sizing; does not place an exchange stop order |
+| `TAKE_PROFIT_PCT` | `4.0` | Reserved configuration; automatic take-profit execution is not implemented |
+| `POLL_INTERVAL_SECONDS` | `60` | Main loop interval |
 
-## Strategy Logic (RSI Mean-Reversion)
+Paper mode starts with a simulated balance of 10,000 units. The current paper ledger is in-memory and resets when the process restarts.
 
-- **BUY** when RSI crosses (or is) below the oversold level (default 30)
-- **SELL** when RSI crosses (or is) above the overbought level (default 70)
-- Only one position at a time by default
+## Test
 
-This is a classic mean-reversion idea. It works best in ranging markets and can underperform in strong trends. You should backtest and optimize parameters yourself.
+Install dependencies, then run:
 
----
-
-## Project Structure
-
-```
-trading_bot/
-├── bot.py              # Main loop
-├── config.py           # Loads .env
-├── exchange.py         # ccxt wrapper + paper simulator
-├── strategy.py         # RSI mean-reversion
-├── risk.py             # Position sizing
-├── requirements.txt
-├── .env.example
-└── README.md
+```bash
+python -m unittest discover -s tests -v
 ```
 
----
+## Live trading checklist
 
-## Extending the Bot
+Live trading is **not recommended until you have reviewed the implementation and tested it thoroughly**. The application now refuses to start with `MODE=live` unless both `API_KEY` and `API_SECRET` are set.
 
-- **Add another strategy**: implement a class with `evaluate(df) → (signal, price, rsi)` and swap it in `bot.py`
-- **Futures / leverage**: change `options={"defaultType": "future"}` in `exchange.py` and adjust risk carefully
-- **Multiple symbols**: loop over a list of symbols
-- **Stop-loss / take-profit orders**: use `create_order` with `stopLoss` / `takeProfit` params (exchange-dependent)
-- **Backtesting**: fetch historical OHLCV and run the same signal logic offline (easy to add)
+Before considering live use:
 
----
+1. Use an exchange API key with trading-only permissions; disable withdrawals and restrict allowed IPs.
+2. Start with tiny amounts and confirm symbol, market type, balance currency, minimum order size, and fee behavior.
+3. Verify exchange-specific order status handling and reconciliation after partial fills, timeouts, and network failures.
+4. Add and independently verify exchange-side stop-loss/take-profit orders before relying on them. The configured percentages do not currently create protective orders.
+5. Run the bot under supervision. Do not assume it is safe for unattended trading.
 
-## Important Safety Notes
+## Current limitations
 
-- Always start in **paper mode**.
-- Never share your API keys.
-- Use keys with the minimum required permissions.
-- Monitor the bot; do not leave it unattended with large capital.
-- Crypto markets are 24/7 and extremely volatile.
-- This code has no warranty. Use at your own risk.
-
----
+This is an evolving trading application, not a managed or audited trading service. Paper balances and positions are not persisted; trade history, user accounts, web dashboard, alerting, and automated backtesting are not included. Spot position detection relies on the exchange's available base balance, which may include assets unrelated to this bot. The strategy is a simple RSI heuristic and has no profitability guarantee.
 
 ## License
 
-MIT — free to use, modify, and learn from.
+MIT. See [LICENSE](LICENSE).
