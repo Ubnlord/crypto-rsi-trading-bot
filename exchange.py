@@ -1,6 +1,6 @@
 """ccxt exchange adapter with persistent paper balances and conservative live execution."""
 from __future__ import annotations
-import logging, time
+import logging, time, uuid
 from typing import Any
 import ccxt
 import pandas as pd
@@ -21,6 +21,10 @@ class Exchange:
             if config.api_passphrase:
                 params["password"] = config.api_passphrase
         self.exchange = exchange_class(params)
+        # CCXT requires sandbox mode to be selected before load_markets/other calls.
+        if config.exchange_id == "bybit" and config.bybit_testnet:
+            self.exchange.set_sandbox_mode(True)
+            logger.warning("Bybit testnet enabled; orders are sent to the test environment")
         self.store = TradingStore()
         self.paper_balance = 10_000.0
         self.paper_positions: dict[str, float] = {}
@@ -79,18 +83,36 @@ class Exchange:
             raise ValueError("Order amount rounds below exchange precision")
         if not self.config.is_live:
             return self._paper_fill(symbol, side, amount)
-        # Do not blindly retry a timed-out order: the exchange may have accepted it.
+        # Stable client ID is stored before network I/O. A timeout is UNKNOWN, never
+        # an invitation to submit a second order. Bybit calls this orderLinkId.
+        client_id = "rsi-" + uuid.uuid4().hex[:24]
+        self.store.create_order_intent(client_id, symbol, side, amount)
+        params: dict[str, Any] = {}
+        if config.exchange_id == "bybit":
+            params["orderLinkId"] = client_id
+        else:
+            params["clientOrderId"] = client_id
         try:
-            order = self.exchange.create_order(symbol, "market", side, amount)
+            order = self.exchange.create_order(symbol, "market", side, amount, None, params)
             if not order or not order.get("id"):
+                self.store.update_order_intent(client_id, status="unknown",
+                    last_error="Exchange returned no order ID", response=order or {})
                 raise RuntimeError("Exchange returned no order ID; reconcile before submitting another order")
-            logger.info("Submitted %s %s %s order=%s status=%s", side, amount, symbol,
-                        order["id"], order.get("status"))
+            status = str(order.get("status") or "unknown").lower()
+            if status not in {"closed", "canceled", "cancelled", "rejected", "expired", "open"}:
+                status = "unknown"
+            self.store.update_order_intent(client_id, status=status,
+                exchange_order_id=str(order["id"]), response=order)
+            logger.info("Submitted %s %s %s order=%s status=%s client_id=%s",
+                        side, amount, symbol, order["id"], order.get("status"), client_id)
+            order["clientOrderId"] = client_id
             return order
         except (ccxt.NetworkError, ccxt.RequestTimeout) as exc:
-            logger.error("Order outcome uncertain (%s). Do not resubmit automatically; reconcile open/recent orders.", exc)
-            raise RuntimeError("Order outcome uncertain; manual/exchange reconciliation required") from exc
-        except ccxt.BaseError:
+            self.store.update_order_intent(client_id, status="unknown", last_error=str(exc))
+            logger.error("Order outcome uncertain; client ID=%s. Do not resubmit automatically.", client_id)
+            raise RuntimeError(f"Order outcome uncertain (client ID {client_id}); reconcile before any new order") from exc
+        except ccxt.BaseError as exc:
+            self.store.update_order_intent(client_id, status="rejected", last_error=str(exc))
             logger.exception("Exchange rejected/failed order")
             raise
 
