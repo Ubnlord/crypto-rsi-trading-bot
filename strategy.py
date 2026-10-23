@@ -25,8 +25,14 @@ def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
+    # Handle edge cases explicitly: a flat series has RSI 50; a series with
+    # gains and no losses has RSI 100. Avoid NaN signals on these markets.
     rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
+    no_losses = avg_loss == 0
+    no_movement = no_losses & (avg_gain == 0)
+    rsi = rsi.mask(no_losses & ~no_movement, 100.0)
+    rsi = rsi.mask(no_movement, 50.0)
     return rsi
 
 
@@ -44,7 +50,9 @@ def generate_signal(
     - SELL when RSI > overbought
     - HOLD otherwise
     """
-    if len(df) < rsi_period + 5:
+    if "close" not in df.columns or df.empty:
+        raise ValueError("OHLCV data must contain a non-empty 'close' column")
+    if len(df) < rsi_period + 2:
         return "HOLD", float(df["close"].iloc[-1]), 50.0
 
     df = df.copy()
@@ -53,6 +61,8 @@ def generate_signal(
     current_rsi = float(df["rsi"].iloc[-1])
     current_price = float(df["close"].iloc[-1])
     prev_rsi = float(df["rsi"].iloc[-2]) if len(df) > 1 else current_rsi
+    if not np.isfinite(current_rsi) or not np.isfinite(current_price):
+        return "HOLD", current_price, 50.0
 
     # Cross into oversold → BUY
     if current_rsi < oversold and prev_rsi >= oversold:
