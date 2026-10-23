@@ -171,3 +171,19 @@ References:
 Before a live order request is sent, the bot persists a client order intent. Bybit requests use a unique `orderLinkId`. If a request times out, its state is marked unknown; the bot does not blindly submit a duplicate. On subsequent ticks it queries the exchange by order ID or client order ID and pauses new trading while unresolved order intents remain. Test this behavior on Bybit testnet before considering any live deployment.
 
 CI uses mocked/local tests and does not possess your Bybit testnet credentials. A passing CI run therefore verifies code-level safeguards only; it is not evidence that protective orders were accepted by Bybit. A real sandbox verification requires running the integration test with testnet API credentials and inspecting the resulting orders in the Bybit testnet account.
+
+
+### Run the authenticated testnet smoke test
+
+This is opt-in and submits a real order on the **Bybit testnet**, not a local mock. It tests acceptance/state reporting and the API's TP/SL fields; it does not guarantee a fill or prove trigger execution during a price move.
+
+1. Create a separate Bybit testnet API key with trade permission and fund the testnet account.
+2. Install dependencies and set the credentials only in your local shell or untracked `.env`; do not paste them into chat or commit them.
+3. Set `BYBIT_TESTNET=true`, `API_KEY`, `API_SECRET`, `BYBIT_TEST_AMOUNT` to a very small valid amount, and optionally `BYBIT_TEST_SYMBOL=BTC/USDT`.
+4. Run:
+
+```bash
+python scripts/bybit_testnet_smoke.py
+```
+
+The script uses CCXT sandbox mode explicitly, submits a limit buy with TP/SL fields, fetches exchange-reported state, and requests cancellation if the entry remains open. A sharp market move can still fill the testnet order. Check order history in the testnet account and manually inspect any order the script cannot cancel. The script is not part of ordinary CI because CI has no exchange credentials. A successful run is a smoke test only; before any live decision, test actual TP and SL triggering and recovery from timeouts/network interruptions separately.
