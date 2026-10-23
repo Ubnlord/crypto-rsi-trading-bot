@@ -43,6 +43,13 @@ class TradingBot:
         logger.info("Bot stopped")
 
     def _tick(self):
+        self.exchange.reconcile_pending_orders()
+        unresolved = self.store.pending_order_intents()
+        if unresolved:
+            self.store.record_event("Trading paused: unresolved order intents require reconciliation",
+                level="CRITICAL", details={"client_order_ids":[x["client_order_id"] for x in unresolved]})
+            logger.critical("Trading paused until %d pending order intent(s) are reconciled", len(unresolved))
+            return
         df = self.exchange.fetch_ohlcv(self.symbol, config.timeframe, config.candle_limit)
         if df.empty or len(df) < config.rsi_period + 2:
             self.store.record_event("Insufficient market data", level="WARNING")
