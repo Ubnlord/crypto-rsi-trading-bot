@@ -28,7 +28,7 @@ services:
       DASHBOARD_HOST: 0.0.0.0
       DASHBOARD_PORT: 8080
     volumes:
-      - bot-data:/app/data:ro
+      - bot-data:/app/data
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
