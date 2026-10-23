@@ -143,3 +143,31 @@ The application now deliberately refuses live startup because exchange-native OC
 - Watch `docker compose ps` and `docker compose logs`; the current health check verifies database availability, not profitability or exchange connectivity.
 - Run on a host with controlled access. The dashboard has no authentication and is intended for localhost only.
 - Run unit tests with `python -m unittest discover -s tests -v` before deployment.
+
+
+## Bybit testnet integration and live safety
+
+This repository's default example configuration targets Bybit and enables the testnet endpoint:
+
+```dotenv
+EXCHANGE_ID=bybit
+SYMBOL=BTC/USDT
+MODE=paper
+BYBIT_TESTNET=true
+```
+
+`BYBIT_TESTNET=true` switches CCXT to Bybit's test environment before markets are loaded. Use API credentials created specifically for Bybit testnet; never reuse production credentials. Paper mode simulates fills locally, so to exercise authenticated sandbox order submission you must explicitly run a controlled test harness with testnet credentials and testnet funds.
+
+### Important Bybit protection limitation
+
+Bybit's official help page currently says OCO orders are **not available to API users**. The V5 API supports TP/SL parameters in specific order workflows, but this bot's current spot strategy submits market entries and has not verified an atomic, exchange-side protective workflow for that path. For that reason, live spot startup is intentionally blocked. Local RSI/stop thresholds are not exchange-side protection and cannot protect positions while the process or network is down.
+
+References:
+- [Bybit V5 Place Order API](https://bybit-exchange.github.io/docs/v5/order/create-order)
+- [Bybit OCO help article](https://www.bybit.com/en/help-center/article/One-Cancels-the-Other-OCO-Orders)
+
+### Order submission and recovery
+
+Before a live order request is sent, the bot persists a client order intent. Bybit requests use a unique `orderLinkId`. If a request times out, its state is marked unknown; the bot does not blindly submit a duplicate. On subsequent ticks it queries the exchange by order ID or client order ID and pauses new trading while unresolved order intents remain. Test this behavior on Bybit testnet before considering any live deployment.
+
+CI uses mocked/local tests and does not possess your Bybit testnet credentials. A passing CI run therefore verifies code-level safeguards only; it is not evidence that protective orders were accepted by Bybit. A real sandbox verification requires running the integration test with testnet API credentials and inspecting the resulting orders in the Bybit testnet account.
