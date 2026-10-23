@@ -38,10 +38,43 @@ class TradingStore:
             CREATE TABLE IF NOT EXISTS paper_state(
               symbol TEXT PRIMARY KEY, cash_balance REAL NOT NULL, position_amount REAL NOT NULL,
               entry_price REAL NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS order_intents(
+              client_order_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+              symbol TEXT NOT NULL, side TEXT NOT NULL, amount REAL NOT NULL,
+              status TEXT NOT NULL, exchange_order_id TEXT, last_error TEXT,
+              response_json TEXT NOT NULL DEFAULT '{}');
             """)
 
     @staticmethod
     def _now(): return datetime.now(timezone.utc).isoformat()
+
+    def create_order_intent(self, client_order_id, symbol, side, amount):
+        now = self._now()
+        with self._connect() as db:
+            db.execute("""INSERT OR IGNORE INTO order_intents
+              (client_order_id,created_at,updated_at,symbol,side,amount,status)
+              VALUES(?,?,?,?,?,?,?)""",
+              (client_order_id,now,now,symbol,side,float(amount),"submitting"))
+            row = db.execute("SELECT * FROM order_intents WHERE client_order_id=?",
+                             (client_order_id,)).fetchone()
+            if row and (row["symbol"] != symbol or row["side"] != side or float(row["amount"]) != float(amount)):
+                raise ValueError("Client order ID already belongs to a different order intent")
+            return dict(row) if row else None
+
+    def update_order_intent(self, client_order_id, *, status, exchange_order_id=None,
+                            last_error=None, response=None):
+        with self._connect() as db:
+            db.execute("""UPDATE order_intents SET updated_at=?,status=?,
+              exchange_order_id=COALESCE(?,exchange_order_id),last_error=?,
+              response_json=? WHERE client_order_id=?""",
+              (self._now(),status,exchange_order_id,last_error,
+               json.dumps(response or {}),client_order_id))
+
+    def pending_order_intents(self, limit=100):
+        with self._connect() as db:
+            return [dict(r) for r in db.execute("""SELECT * FROM order_intents
+              WHERE status IN ('submitting','unknown','open','partially_filled')
+              ORDER BY created_at LIMIT ?""",(max(1,min(1000,int(limit))),))]
 
     def save_paper_state(self, symbol, cash_balance, position_amount, entry_price):
         with self._connect() as db:
