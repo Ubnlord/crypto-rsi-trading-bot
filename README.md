@@ -78,3 +78,30 @@ This is an evolving trading application, not a managed or audited trading servic
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+## Persistent history and dashboard
+
+The bot stores paper portfolio state, confirmed trade records, portfolio snapshots, and bot events in SQLite at `data/trading_bot.sqlite3` by default. Set `DATABASE_PATH` to choose another location. Back up this file and keep it out of public repositories.
+
+Start the read-only dashboard in a separate terminal:
+
+```bash
+python dashboard.py
+```
+
+Open `http://127.0.0.1:8080`. The dashboard reads recorded snapshots, trades and events; it does not place orders. It binds to localhost by default and has no authentication. **Do not expose it to the public internet** without adding authentication, TLS, and network access controls.
+
+## Backtesting
+
+Prepare a CSV with a numeric `close` column and run:
+
+```bash
+python backtest.py historical-candles.csv --fee 0.001 --slippage 0.0005 --output backtest-results.json
+```
+
+The report includes net return, estimated fees, win rate, and maximum drawdown. It is a simple spot-strategy research tool, not a tick-accurate exchange simulator. Validate assumptions and avoid tuning parameters on the same period used to report results.
+
+## Risk-control limitation
+
+The configured stop-loss and take-profit thresholds currently support **bot-side monitoring only**. They are not guaranteed exchange-side protective orders: a stopped process, network outage, or exchange API failure can prevent a market exit. Do not rely on these thresholds for live-money protection. Exchange-native conditional orders must be implemented and tested per exchange before live trading can be considered production-ready.
