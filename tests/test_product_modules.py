@@ -22,10 +22,11 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(trades[0]["symbol"], "BTC/USD")
 
     def test_invalid_trade_is_rejected(self):
-        store = TradingStore(":memory:")
-        with self.assertRaises(ValueError):
-            store.record_trade(symbol="BTC/USD", side="buy", amount=0, price=100,
-                               mode="paper", status="closed")
+        with tempfile.TemporaryDirectory() as directory:
+            store = TradingStore(str(Path(directory) / "bot.sqlite3"))
+            with self.assertRaises(ValueError):
+                store.record_trade(symbol="BTC/USD", side="buy", amount=0, price=100,
+                                   mode="paper", status="closed")
 
 
 class BacktestTests(unittest.TestCase):
