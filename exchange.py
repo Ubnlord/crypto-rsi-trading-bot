@@ -13,6 +13,7 @@ import ccxt
 import pandas as pd
 
 from config import config
+from trading_store import TradingStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class Exchange:
         self.exchange: ccxt.Exchange = exchange_class(params)
         self.paper_balance = 10_000.0  # starting USDT for paper mode
         self.paper_positions: Dict[str, float] = {}  # symbol -> amount
-        self.paper_entry_price: Dict[str, float] = {}
+        self.paper_entry_price: Dict[str, float] = {}\n        self.store = TradingStore()\n        if not config.is_live:\n            saved = self.store.load_paper_state(config.symbol)\n            if saved:\n                self.paper_balance = float(saved["cash_balance"])\n                if float(saved["position_amount"]) > 0:\n                    self.paper_positions[config.symbol] = float(saved["position_amount"])\n                    self.paper_entry_price[config.symbol] = float(saved["entry_price"])\n                logger.info("Restored persisted paper portfolio for %s", config.symbol)
 
         if not config.is_live:
             logger.info("Running in PAPER mode (no real orders will be sent)")
