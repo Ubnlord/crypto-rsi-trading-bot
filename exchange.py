@@ -71,8 +71,43 @@ class Exchange:
                 return float(trade["price"])
         return None
 
-    def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
-        return self.exchange.fetch_order(order_id, symbol)
+    def fetch_order(self, order_id: str | None, symbol: str, params: dict | None = None) -> dict[str, Any]:
+        return self.exchange.fetch_order(order_id, symbol, params or {})
+
+    def reconcile_pending_orders(self) -> list[dict[str, Any]]:
+        """Query exchange state for every persisted nonterminal order intent."""
+        reconciled = []
+        for intent in self.store.pending_order_intents():
+            params = {}
+            if self.config.exchange_id == "bybit":
+                params["orderLinkId"] = intent["client_order_id"]
+            try:
+                order_id = intent.get("exchange_order_id")
+                order = self.fetch_order(str(order_id) if order_id else None,
+                                         intent["symbol"], params)
+                status = str(order.get("status") or "unknown").lower()
+                if status not in {"closed","canceled","cancelled","rejected","expired","open"}:
+                    status = "unknown"
+                if status == "closed" and float(order.get("filled") or 0) > 0:
+                    amount = float(order.get("filled") or 0)
+                    price = float(order.get("average") or order.get("price") or 0)
+                    if price > 0:
+                        self.store.record_trade(symbol=intent["symbol"], side=intent["side"],
+                            amount=amount, price=price, mode="live", status="closed",
+                            exchange_order_id=str(order.get("id") or intent.get("exchange_order_id") or "") or None,
+                            fee=float((order.get("fee") or {}).get("cost") or 0),
+                            metadata={"reconciled": True, "client_order_id": intent["client_order_id"]})
+                elif float(order.get("filled") or 0) > 0:
+                    status = "partially_filled"
+                self.store.update_order_intent(intent["client_order_id"], status=status,
+                    exchange_order_id=str(order.get("id") or "") or None, response=order)
+                reconciled.append(order)
+            except Exception as exc:
+                self.store.update_order_intent(intent["client_order_id"], status="unknown",
+                    last_error=str(exc))
+                logger.warning("Order intent %s remains unresolved: %s",
+                               intent["client_order_id"], exc)
+        return reconciled
 
     def place_market_order(self, symbol: str, side: str, amount: float) -> dict[str, Any] | None:
         side = side.lower()
