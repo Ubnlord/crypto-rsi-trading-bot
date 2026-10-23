@@ -1,20 +1,36 @@
-"""Conservative order lifecycle helpers.
+"""Exchange-specific protection policy.
 
-Live trading is blocked unless an exchange-specific OCO adapter is implemented and
-explicitly enabled. Two independent sell orders are not a safe substitute for OCO.
+Bybit's public help documentation states OCO orders are not available to API users.
+The bot therefore refuses live spot trading until a verified atomic protection path is
+available; independent stop and take-profit orders are not treated as equivalent.
 """
 from __future__ import annotations
+
 from config import config
 
-class ProtectionUnavailable(RuntimeError):
-    pass
 
-def require_exchange_protection(exchange_id: str) -> None:
-    if config.is_live:
+class ProtectionUnavailable(RuntimeError):
+    """Live order placement is blocked because protective execution is unverified."""
+
+
+def require_exchange_protection(exchange_id: str, *, market_type: str = "spot") -> None:
+    if not config.is_live:
+        return
+    exchange_id = exchange_id.lower()
+    # This bot currently sizes and reconciles spot inventory. Bybit API OCO is not
+    # available, and the strategy currently submits market entries without attached
+    # exchange TP/SL. Do not imply that local monitoring is exchange-side protection.
+    if exchange_id == "bybit" and market_type == "spot":
         raise ProtectionUnavailable(
-            f"Live trading is fail-closed: native OCO/bracket protection has not been "
-            f"implemented and verified for {exchange_id}. Use MODE=paper."
+            "Bybit live spot trading is disabled: API OCO is not available and this "
+            "bot does not yet have a verified atomic entry-with-TP/SL workflow. "
+            "Use MODE=paper and BYBIT_TESTNET=true for sandbox integration tests."
         )
+    raise ProtectionUnavailable(
+        f"Live trading is disabled until an exchange-native protective-order adapter "
+        f"is implemented and verified for {exchange_id}/{market_type}."
+    )
+
 
 def order_is_filled(order: dict) -> bool:
     status = str(order.get("status") or "").lower()
@@ -22,5 +38,8 @@ def order_is_filled(order: dict) -> bool:
     filled = float(order.get("filled") or 0)
     return status == "closed" and (amount <= 0 or filled >= amount * 0.999)
 
+
 def order_is_terminal(order: dict) -> bool:
-    return str(order.get("status") or "").lower() in {"closed", "canceled", "cancelled", "rejected", "expired"}
+    return str(order.get("status") or "").lower() in {
+        "closed", "canceled", "cancelled", "rejected", "expired"
+    }
