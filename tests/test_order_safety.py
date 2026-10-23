@@ -13,6 +13,11 @@ class OrderSafetyTests(unittest.TestCase):
         with patch("order_safety.config.mode", "paper"):
             require_exchange_protection("kraken")
 
+    def test_bybit_live_spot_is_blocked_without_verified_api_protection(self):
+        with patch("order_safety.config.mode", "live"):
+            with self.assertRaises(ProtectionUnavailable):
+                require_exchange_protection("bybit", market_type="spot")
+
     def test_partial_fill_is_not_treated_as_fully_filled(self):
         self.assertFalse(order_is_filled({"status":"open","amount":10,"filled":4}))
         self.assertFalse(order_is_filled({"status":"closed","amount":10,"filled":4}))
