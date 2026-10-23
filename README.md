@@ -105,3 +105,41 @@ The report includes net return, estimated fees, win rate, and maximum drawdown. 
 ## Risk-control limitation
 
 The configured stop-loss and take-profit thresholds currently support **bot-side monitoring only**. They are not guaranteed exchange-side protective orders: a stopped process, network outage, or exchange API failure can prevent a market exit. Do not rely on these thresholds for live-money protection. Exchange-native conditional orders must be implemented and tested per exchange before live trading can be considered production-ready.
+
+
+## Container deployment (paper mode)
+
+Requirements: Docker Engine with Compose v2. This deployment intentionally forces `MODE=paper`; live mode is blocked until a verified exchange-native OCO/bracket adapter exists.
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+docker compose ps
+docker compose logs -f bot
+```
+
+Open the dashboard on the same machine at `http://127.0.0.1:8080`. The port is bound to loopback, not a public interface. Do not change that binding on an internet-facing server without adding authentication, TLS, firewall rules, and a proper production web server. Persistent SQLite data lives in the Docker volume `bot-data`.
+
+To stop the services:
+
+```bash
+docker compose down
+```
+
+To stop and remove persistent data too (destructive):
+
+```bash
+docker compose down -v
+```
+
+### Live mode status
+
+The application now deliberately refuses live startup because exchange-native OCO protection has not been implemented and verified for the selected exchange. This is intentional fail-closed behavior, not a configuration bug. A generic stop order plus a separate take-profit order can both execute and oversell a spot position; a safe implementation needs exchange-specific atomic OCO/bracket support, correct order-size reconciliation, and tests against the exchange sandbox. Do not bypass this guard for real funds.
+
+### Operations checklist
+
+- Keep API credentials out of images, source control, and logs.
+- Back up the SQLite volume and test restoring it.
+- Watch `docker compose ps` and `docker compose logs`; the current health check verifies database availability, not profitability or exchange connectivity.
+- Run on a host with controlled access. The dashboard has no authentication and is intended for localhost only.
+- Run unit tests with `python -m unittest discover -s tests -v` before deployment.
