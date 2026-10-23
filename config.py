@@ -68,7 +68,7 @@ class Config:
 
         if self.is_live:
             print(
-                "\\n"
+                "\n"
                 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\\n"
                 "  WARNING: LIVE TRADING MODE ENABLED\\n"
                 "  Real money will be used. You can lose everything.\\n"
