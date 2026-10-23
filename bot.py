@@ -12,7 +12,8 @@ import time
 from config import config
 from exchange import Exchange
 from strategy import RSIMeanReversion
-from risk import calculate_position_size, should_allow_new_position\nfrom trading_store import TradingStore
+from risk import calculate_position_size, should_allow_new_position
+from trading_store import TradingStore\nfrom trading_store import TradingStore
 
 logging.basicConfig(
     level=getattr(logging, config.log_level, logging.INFO),
@@ -33,7 +34,9 @@ class TradingBot:
         )
         self.running = True
         self.symbol = config.symbol
-        self.quote_currency = self.symbol.split("/")[-1].split(":")[0]\n        self.store = TradingStore()\n        self.entry_price = None
+        self.quote_currency = self.symbol.split("/")[-1].split(":")[0]
+        self.store = TradingStore()
+        self.entry_price = None\n        self.store = TradingStore()\n        self.entry_price = None
 
         signal.signal(signal.SIGINT, self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
@@ -80,7 +83,16 @@ class TradingBot:
         self.strategy.in_position = position > 0
         equity = self.exchange.get_balance(self.quote_currency)
 
-        signal_name, price, rsi = self.strategy.evaluate(df)\n        # Local protective exits are a fallback only; they are not exchange-side orders.\n        entry = self.entry_price\n        if position > 0 and entry is not None:\n            if price <= entry * (1 - config.stop_loss_pct / 100):\n                signal_name = "SELL"\n                self.store.record_event("Local stop-loss threshold reached", level="WARNING", details={"price": price, "entry": entry})\n            elif price >= entry * (1 + config.take_profit_pct / 100):\n                signal_name = "SELL"\n                self.store.record_event("Local take-profit threshold reached", details={"price": price, "entry": entry})
+        signal_name, price, rsi = self.strategy.evaluate(df)
+        if position > 0 and self.entry_price is not None:
+            if price <= self.entry_price * (1 - config.stop_loss_pct / 100):
+                signal_name = "SELL"
+                self.store.record_event("Local stop-loss threshold reached", level="WARNING", details={"price": price})
+            elif price >= self.entry_price * (1 + config.take_profit_pct / 100):
+                signal_name = "SELL"
+                self.store.record_event("Local take-profit threshold reached", details={"price": price})\n        # Local protective exits are a fallback only; they are not exchange-side orders.\n        entry = self.entry_price\n        if position > 0 and entry is not None:\n            if price <= entry * (1 - config.stop_loss_pct / 100):\n                signal_name = "SELL"\n                self.store.record_event("Local stop-loss threshold reached", level="WARNING", details={"price": price, "entry": entry})\n            elif price >= entry * (1 + config.take_profit_pct / 100):\n                signal_name = "SELL"\n                self.store.record_event("Local take-profit threshold reached", details={"price": price, "entry": entry})
+        self.store.record_snapshot(mode="live" if config.is_live else "paper", quote_currency=self.quote_currency, cash_balance=equity, position_amount=position, mark_price=price, equity=equity + position * price)
+        self.store.record_event("Market tick", details={"symbol": self.symbol, "price": price, "rsi": rsi, "signal": signal_name})
         logger.info(
             "%s | Price: %.8f | RSI: %.1f | Signal: %s | %s balance: %.2f | Pos: %.8f",
             self.symbol,
@@ -114,6 +126,9 @@ class TradingBot:
         order = self.exchange.place_market_order(self.symbol, "buy", amount)
         if order and order.get("status") in ("closed", "filled"):
             self.strategy.on_filled("buy")
+            fill_price = float(order.get("average") or order.get("price") or price)
+            self.entry_price = fill_price
+            self.store.record_trade(symbol=self.symbol, side="buy", amount=float(order.get("filled") or amount), price=fill_price, mode="live" if config.is_live else "paper", status=str(order.get("status")), exchange_order_id=str(order.get("id") or "") or None)
             logger.info("Entered long position: %s %s", amount, self.symbol)
         elif order:
             logger.warning(
@@ -131,6 +146,10 @@ class TradingBot:
         order = self.exchange.place_market_order(self.symbol, "sell", amount)
         if order and order.get("status") in ("closed", "filled"):
             self.strategy.on_filled("sell")
+            fill_price = float(order.get("average") or order.get("price") or 0)
+            if fill_price > 0:
+                self.store.record_trade(symbol=self.symbol, side="sell", amount=float(order.get("filled") or amount), price=fill_price, mode="live" if config.is_live else "paper", status=str(order.get("status")), exchange_order_id=str(order.get("id") or "") or None)
+            self.entry_price = None
             logger.info("Closed position: %s %s", amount, self.symbol)
         elif order:
             logger.warning(
