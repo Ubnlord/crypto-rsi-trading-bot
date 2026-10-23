@@ -57,6 +57,16 @@ class Exchange:
         base = self.exchange.market(symbol)["base"]
         return float(self.exchange.fetch_balance().get("free", {}).get(base, 0) or 0)
 
+    def get_entry_price(self, symbol: str) -> float | None:
+        if not self.config.is_live:
+            return self.paper_entry_price.get(symbol)
+        # Live entries are tracked from the bot's confirmed trade ledger.
+        trades = self.store.recent_trades(1000)
+        for trade in trades:
+            if trade.get("symbol") == symbol and trade.get("side") == "buy" and trade.get("status") == "closed":
+                return float(trade["price"])
+        return None
+
     def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
         return self.exchange.fetch_order(order_id, symbol)
 
