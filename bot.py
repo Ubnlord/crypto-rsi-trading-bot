@@ -52,7 +52,18 @@ class TradingBot:
             return
         position = self.exchange.get_position_amount(self.symbol)
         cash = self.exchange.get_balance(self.quote_currency)
+        self.strategy.in_position = position > 0
         signal_name, price, rsi = self.strategy.evaluate(closed)
+        entry_price = self.exchange.get_entry_price(self.symbol) if position > 0 else None
+        if position > 0 and entry_price and entry_price > 0:
+            if price <= entry_price * (1 - config.stop_loss_pct / 100):
+                signal_name = "SELL"
+                self.store.record_event("Bot-side stop-loss threshold reached", level="WARNING",
+                    details={"price": price, "entry_price": entry_price})
+            elif price >= entry_price * (1 + config.take_profit_pct / 100):
+                signal_name = "SELL"
+                self.store.record_event("Bot-side take-profit threshold reached",
+                    details={"price": price, "entry_price": entry_price})
         self.store.record_snapshot(mode=config.mode, quote_currency=self.quote_currency,
             cash_balance=cash, position_amount=position, mark_price=price, equity=cash + position * price)
         self.store.record_event("Market tick", details={"symbol":self.symbol,"price":price,"rsi":rsi,"signal":signal_name})
