@@ -15,6 +15,7 @@ class Config:
     api_key: str = os.getenv("API_KEY", "").strip()
     api_secret: str = os.getenv("API_SECRET", "").strip()
     api_passphrase: str = os.getenv("API_PASSPHRASE", "").strip()
+    bybit_testnet: bool = os.getenv("BYBIT_TESTNET", "false").strip().lower() in ("1", "true", "yes", "on")
 
     mode: str = os.getenv("MODE", "paper").strip().lower()
     symbol: str = os.getenv("SYMBOL", "BTC/USD").strip()
