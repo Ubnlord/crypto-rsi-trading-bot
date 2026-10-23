@@ -134,7 +134,16 @@ class Exchange:
                     last_error="Exchange returned no order ID", response=order or {})
                 raise RuntimeError("Exchange returned no order ID; reconcile before submitting another order")
             status = str(order.get("status") or "unknown").lower()
-            if status not in {"closed", "canceled", "cancelled", "rejected", "expired", "open"}:
+            filled = float(order.get("filled") or 0)
+            requested = float(order.get("amount") or amount)
+            if status == "closed" and filled >= requested * 0.999:
+                status = "closed"
+            elif status == "closed" and filled > 0:
+                status = "partially_filled"
+            elif status == "closed":
+                # A terminal-looking response without fill details is ambiguous.
+                status = "unknown"
+            elif status not in {"canceled", "cancelled", "rejected", "expired", "open"}:
                 status = "unknown"
             self.store.update_order_intent(client_id, status=status,
                 exchange_order_id=str(order["id"]), response=order)
